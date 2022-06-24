@@ -283,11 +283,11 @@ async fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let db_path = Path::new(&args[1]);
     let mut options = Options::default();
-    options.create_if_missing(false);
+    options.create_if_missing(true);
     let db = DB::open(&options, db_path).unwrap();
-    println!("Running http server on 0.0.0.0:23300");
+    println!("Running http server on 0.0.0.0:8080");
     let _ = serve_http(
-        ([0, 0, 0, 0], 23300),
+        ([0, 0, 0, 0], 8080),
         hyper_handler,
         Storage {
             db,
