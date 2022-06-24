@@ -11,5 +11,6 @@ hyper = { version = "0.14", features = ["full"] }
 monoio = { git = "https://github.com/bytedance/monoio" , default-features = false, features = ["async-cancel", "bytes", "iouring", "macros", "utils"] }
 monoio-compat = { git = "https://github.com/bytedance/monoio" }
 parking_lot = "0.12.1"
+rocksdb = "0.18.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
