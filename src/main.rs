@@ -1,8 +1,10 @@
+use dto::InsrtRequest;
 use futures::Future;
 use hyper::{server::conn::Http, service::service_fn};
+use hyper::{Body, Method, Request, Response, StatusCode};
 use monoio::net::TcpListener;
 use monoio_compat::TcpStreamCompat;
-use rocksdb::{Options, DB};
+use rocksdb::{Options, WriteBatch, DB};
 use std::{cell::RefCell, net::SocketAddr, path::Path, rc::Rc};
 mod dto;
 
@@ -41,18 +43,22 @@ where
     }
 }
 
-use hyper::{Body, Method, Request, Response, StatusCode};
-
 async fn handle_query(key: &str, db: Rc<RefCell<DB>>) -> Result<Response<Body>, hyper::Error> {
     let db = db.borrow_mut();
     let value = db.get(key.as_bytes()).unwrap();
     match value {
-        Some(value) => Ok(Response::new(Body::from(value.to_vec()))),
+        Some(value) => Ok(Response::new(Body::from(value))),
         None => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::empty())
             .unwrap()),
     }
+}
+
+async fn handle_del(key: &str, db: Rc<RefCell<DB>>) -> Result<Response<Body>, hyper::Error> {
+    let db = db.borrow_mut();
+    db.delete(key).unwrap();
+    Ok(Response::new(Body::from("")))
 }
 
 async fn handle_add(
@@ -64,27 +70,55 @@ async fn handle_add(
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     let db = db.borrow_mut();
     db.put(&dto.key, &dto.value).unwrap();
-    Ok(Response::new(Body::from(format!(
-        "{} = {}",
-        dto.key, dto.value
-    ))))
+    Ok(Response::new(Body::from("")))
 }
 
-async fn handle_batch(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_batch(
+    req: Request<Body>,
+    db: Rc<RefCell<DB>>,
+) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
-    Ok(Response::new(Body::from(format!(
-        "{} = {}",
-        dto[0].key, dto[0].value
-    ))))
+    let db = db.borrow_mut();
+    let mut write_batch = WriteBatch::default();
+    for kv in dto {
+        write_batch.put(kv.key, kv.value);
+    }
+    db.write(write_batch).unwrap();
+    Ok(Response::new(Body::from("")))
 }
 
-async fn handle_list(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+async fn handle_list(
+    req: Request<Body>,
+    db: Rc<RefCell<DB>>,
+) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
-    Ok(Response::new(Body::from(format!("{}", dto[0]))))
+    let dto = &dto;
+    let db = db.borrow_mut();
+    let values: Result<Vec<InsrtRequest>, ()> = dto
+        .into_iter()
+        .zip(db.multi_get(dto).into_iter())
+        .map(|(key, res)| match res {
+            Ok(value) => match value {
+                Some(value) => Ok(InsrtRequest {
+                    key: key.clone(),
+                    value: unsafe { String::from_utf8_unchecked(value) },
+                }),
+                None => Err(()),
+            },
+            Err(_) => Err(()),
+        })
+        .collect();
+    match values {
+        Ok(kvs) => match serde_json::to_string(&kvs) {
+            Ok(json_string) => Ok(Response::new(Body::from(json_string))),
+            Err(_) => Ok(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty()).unwrap()),
+        },
+        Err(_) => Ok(Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap()),
+    }
 }
 
 async fn hyper_handler(
@@ -95,18 +129,18 @@ async fn hyper_handler(
         let path = req.uri().path();
         let path = path.split("/").collect::<Vec<&str>>();
         return match path[1] {
-            "query" =>  handle_query(path[2], db).await,
-            "del" =>  Ok(Response::new(Body::from("del"))),
+            "query" => handle_query(path[2], db).await,
+            "del" => handle_del(path[2], db).await,
             "zrmv" => Ok(Response::new(Body::from("zrmv"))),
             _ => Ok(Response::new(Body::from("unknown"))),
-        }
+        };
     } else if req.method() == &Method::POST {
         let path = req.uri().path();
         let path = path.split("/").collect::<Vec<&str>>();
         return match path[1] {
             "add" => handle_add(req, db).await,
-            "batch" => handle_batch(req).await,
-            "list" => handle_list(req).await,
+            "batch" => handle_batch(req, db).await,
+            "list" => handle_list(req, db).await,
             "zadd" => Ok(Response::new(Body::from("zadd"))),
             "zrange" => Ok(Response::new(Body::from("zrange"))),
             _ => Ok(Response::builder()
