@@ -1,4 +1,6 @@
-use dto::InsrtRequest;
+mod dto;
+
+use dto::{InsrtRequest, ScoreValue, ScoreRange};
 use futures::Future;
 use hyper::{server::conn::Http, service::service_fn};
 use hyper::{Body, Method, Request, Response, StatusCode};
@@ -8,7 +10,6 @@ use rocksdb::{Options, WriteBatch, DB};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{cell::RefCell, net::SocketAddr, path::Path, rc::Rc};
-mod dto;
 
 #[derive(Clone)]
 struct HyperExecutor;
@@ -101,7 +102,7 @@ async fn handle_zadd(
     storage: Rc<RefCell<Storage>>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    let dto: dto::ScoreValue = serde_json::from_slice(&data).unwrap();
+    let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
     let mut storage = storage.borrow_mut();
     let zsets = &mut storage.zsets;
     let zset = zsets.entry(key.to_string()).or_insert_with(|| ZSet {
@@ -140,7 +141,7 @@ async fn handle_zrange(
     storage: Rc<RefCell<Storage>>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    let dto: dto::ScoreRange = serde_json::from_slice(&data).unwrap();
+    let dto: ScoreRange = serde_json::from_slice(&data).unwrap();
     let mut storage = storage.borrow_mut();
     let zsets = &mut storage.zsets;
 
@@ -151,7 +152,7 @@ async fn handle_zrange(
             .score_to_values
             .range(min_score..=max_score)
             .map(|(score, assoc_values)| {
-                assoc_values.into_iter().map(|value| dto::ScoreValue {
+                assoc_values.into_iter().map(|value| ScoreValue {
                     score: *score,
                     value: value.clone(),
                 })
