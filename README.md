@@ -38,9 +38,9 @@
 
 ## TODO
 
-[] 持久化 zset
-[] 手动解析 HTTP 请求和构造 HTTP 响应
-[] 使用 DPDK 来实现网络栈
+- [] 持久化 zset
+- [] 手动解析 HTTP 请求和构造 HTTP 响应
+- [] 使用 DPDK 来实现网络栈
 
 ## 环境配置
 
@@ -63,7 +63,7 @@ registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 
 配置完成之后，运行 `cargo build` 检查是否能正常编译。
 
-···
+```bash
 ### 阿里云命令行工具
 curl -o- https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz | tar zxvf - 
 chmod +x aliyun && sudo mv aliyun /usr/local/bin
