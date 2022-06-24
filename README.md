@@ -49,7 +49,7 @@
 ```bash
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-···
+```
 
 配置清华源，将下面的内容保存到 `~/.cargo/config`
 
