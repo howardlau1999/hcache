@@ -63,12 +63,14 @@ registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 
 配置完成之后，运行 `cargo build` 检查是否能正常编译。
 
-```bash
 ### 阿里云命令行工具
-curl -o- https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz | tar zxvf - 
-chmod +x aliyun && sudo mv aliyun /usr/local/bin
+
+```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
 nvm install 18
 npm config set registry https://npmmirror.com
 npm install -g lerna typescript @alicloud/ros-cdk-cli 
+cd ros && npm install
 ```
+
+之后进入 `ros` 文件夹运行 `ros-cdk synth --json`，输出的就是需要提交的 JSON 文件。
