@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 crossbeam = "0.8.1"
-crossbeam-skiplist = "0.0.0"
 futures = "0.3"
 hyper = { version = "0.14", features = ["full"] }
 monoio = { git = "https://github.com/bytedance/monoio" , default-features = false, features = ["async-cancel", "bytes", "iouring", "macros", "utils"] }
