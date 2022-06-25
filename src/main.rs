@@ -1,12 +1,13 @@
 mod dto;
 
-use dto::{InsrtRequest, ScoreValue, ScoreRange};
+use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use futures::Future;
 use hyper::{server::conn::Http, service::service_fn};
 use hyper::{Body, Method, Request, Response, StatusCode};
 use monoio::net::TcpListener;
 use monoio_compat::TcpStreamCompat;
-use rocksdb::{Options, WriteBatch, DB};
+#[allow(unused)]
+use rocksdb::{IteratorMode, Options, WriteBatch, DB};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{cell::RefCell, net::SocketAddr, path::Path, rc::Rc};
@@ -56,7 +57,7 @@ pub struct ZSet {
 }
 
 pub struct Storage {
-    db: DB,
+    kv: HashMap<String, String>,
     zsets: HashMap<String, ZSet>,
 }
 
@@ -64,10 +65,10 @@ async fn handle_query(
     key: &str,
     storage: Rc<RefCell<Storage>>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.borrow_mut().db;
-    let value = db.get(key.as_bytes()).unwrap();
+    let kv = &mut storage.borrow_mut().kv;
+    let value = kv.get(key);
     match value {
-        Some(value) => Ok(Response::new(Body::from(value))),
+        Some(value) => Ok(Response::new(Body::from(value.clone()))),
         None => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::empty())
@@ -79,8 +80,8 @@ async fn handle_del(
     key: &str,
     storage: Rc<RefCell<Storage>>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.borrow_mut().db;
-    db.delete(key).unwrap();
+    let kv = &mut storage.borrow_mut().kv;
+    kv.remove(key);
     Ok(Response::new(Body::empty()))
 }
 
@@ -91,8 +92,8 @@ async fn handle_add(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
-    let db = &storage.borrow_mut().db;
-    db.put(&dto.key, &dto.value).unwrap();
+    let kv = &mut storage.borrow_mut().kv;
+    kv.insert(dto.key, dto.value);
     Ok(Response::new(Body::empty()))
 }
 
@@ -201,12 +202,10 @@ async fn handle_batch(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.borrow_mut().db;
-    let mut write_batch = WriteBatch::default();
-    for kv in dto {
-        write_batch.put(kv.key, kv.value);
+    let kv = &mut storage.borrow_mut().kv;
+    for dto in dto {
+        kv.insert(dto.key, dto.value);
     }
-    db.write(write_batch).unwrap();
     Ok(Response::new(Body::empty()))
 }
 
@@ -217,32 +216,26 @@ async fn handle_list(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
-    let dto = &dto;
-    let db = &storage.borrow_mut().db;
-    let values: Result<Vec<InsrtRequest>, ()> = dto
-        .into_iter()
-        .zip(db.multi_get(dto).into_iter())
-        .map(|(key, res)| match res {
-            Ok(value) => match value {
-                Some(value) => Ok(InsrtRequest {
-                    key: key.clone(),
-                    value: unsafe { String::from_utf8_unchecked(value) },
-                }),
-                None => Err(()),
-            },
-            Err(_) => Err(()),
-        })
-        .collect();
-    match values {
-        Ok(kvs) => match serde_json::to_string(&kvs) {
-            Ok(json_string) => Ok(Response::new(Body::from(json_string))),
-            Err(_) => Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
+    let kv = &mut storage.borrow_mut().kv;
+    let mut kvs = Vec::new();
+    for key in dto {
+        if let Some(value) = kv.get(&key) {
+            kvs.push(InsrtRequest {
+                key,
+                value: value.clone(),
+            });
+        } else {
+            return Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
                 .body(Body::empty())
-                .unwrap()),
-        },
+                .unwrap());
+        }
+    }
+
+    match serde_json::to_string(&kvs) {
+        Ok(json_string) => Ok(Response::new(Body::from(json_string))),
         Err(_) => Ok(Response::builder()
-            .status(StatusCode::NOT_FOUND)
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
             .body(Body::empty())
             .unwrap()),
     }
@@ -290,12 +283,18 @@ async fn main() {
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DB::open(&options, db_path).unwrap();
+    let mut kv = HashMap::new();
+    db.iterator(IteratorMode::Start).for_each(|(key, value)| {
+        let key = unsafe { String::from_utf8_unchecked(key.to_vec()) };
+        let value = unsafe { String::from_utf8_unchecked(value.to_vec()) };
+        kv.insert(key, value);
+    });
     println!("Running http server on 0.0.0.0:8080");
     let _ = serve_http(
         ([0, 0, 0, 0], 8080),
         hyper_handler,
         Storage {
-            db,
+            kv,
             zsets: HashMap::new(),
         },
     )

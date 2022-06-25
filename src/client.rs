@@ -273,6 +273,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if score_values.len() != 0 {
         panic!("score_values.len() is not correct");
     }
+    for i in 1..100 {
+        zrmv("zset".into(), format!("{}", i)).await.unwrap();
+    }
+    zrange("zset".into(), 0, 0).await.unwrap_err();
 
     println!("correct");
     Ok(())
