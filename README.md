@@ -79,6 +79,6 @@ npm install -g lerna typescript @alicloud/ros-cdk-cli
 cd ros && npm install
 ```
 
-运行 `aliyun configure` 配置 API 密钥，区域填 `cn-beijing`。然后在 `ros` 目录下运行 `ros-cdk load-config` 导入 API 配置。   
+运行 `aliyun configure` 配置 API 密钥（去阿里云控制台查，右上角头像下拉菜单 AccessKey 管理），区域填 `cn-beijing`。然后在 `ros` 目录下运行 `ros-cdk load-config` 导入 API 配置。 
 
 之后进入 `ros` 文件夹运行 `ros-cdk synth --json`，输出的就是需要提交的 JSON 文件。运行 `ros-cdk deploy TestStack` 就可以部署测试用的 ECS 了。 
