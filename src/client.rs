@@ -301,6 +301,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     add("zset".into(), "foo".into()).await.unwrap();
     zadd("zset".into(), 0, "a".into()).await.unwrap_err();
     zrange("zset".into(), 0, 0).await.unwrap_err();
+    let value = query("zset".into()).await.unwrap();
+    expect("zset = foo", value, "foo".into());
+    del("zset".into()).await.unwrap();
 
     println!("correct");
 
