@@ -1,10 +1,12 @@
 mod dto;
+mod http_parser;
 
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use futures::Future;
 use hyper::{server::conn::Http, service::service_fn};
 use hyper::{Body, Method, Request, Response, StatusCode};
-use monoio::net::TcpListener;
+use monoio::io::AsyncReadRent;
+use monoio::net::{TcpListener, TcpStream};
 use monoio_compat::TcpStreamCompat;
 use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
@@ -48,6 +50,125 @@ where
                 service(req, storage)
             }),
         ));
+    }
+}
+
+enum HttpMethod {
+    Unknown,
+    Get,
+    Post,
+}
+
+enum HttpRequestParserState {
+    ParseMethod,
+    SkipSpace,
+    ParsePath,
+    SkipHeader,
+    ParseBody,
+}
+
+struct ParserContext {
+    buf: Vec<u8>,
+    method_pos: usize,
+    state: HttpRequestParserState,
+    method: HttpMethod,
+    method_buf: [u8; 4],
+    cur_path_component: Vec<u8>,
+    path: Vec<String>,
+    rnrn_pos: usize,
+    
+}
+
+impl ParserContext {
+    fn new() -> Self {
+        Self {
+            buf: Vec::new(),
+            method_pos: 0,
+            state: HttpRequestParserState::ParseMethod,
+            method: HttpMethod::Unknown,
+            path: Vec::new(),
+            cur_path_component: Vec::new(),
+            method_buf: [0; 4],
+            rnrn_pos: 0
+        }
+    }
+
+    fn parse_method(self: &mut Self, method_buf: [u8; 4]) {
+        let method: u32 = unsafe { std::mem::transmute(method_buf) };
+        match method {
+            GET_U32 => {
+                self.method = HttpMethod::Get;
+                self.state = HttpRequestParserState::ParsePath;
+            }
+            POST_U32 => {
+                self.method = HttpMethod::Post;
+                self.state = HttpRequestParserState::SkipSpace;
+            }
+            _ => self.method = HttpMethod::Unknown,
+        }
+    }
+
+    fn feed(self: &mut Self, buf: &[u8], n: usize) {
+        let mut buf_pos = 0;
+        while buf_pos < buf.len() {
+            match self.state {
+                HttpRequestParserState::ParseMethod => {
+                    if self.method_pos == 0 && n >= 4 {
+                        buf_pos += 4;
+                        self.parse_method(unsafe { std::mem::transmute(*(buf.as_ptr() as *const u32)) });
+                    } else {
+                        let diff = std::cmp::max(4 - self.method_pos, n);
+                        for i in 0..diff {
+                            self.method_buf[self.method_pos + i] = buf[i];
+                        }
+                        buf_pos += diff;
+                        if self.method_pos == 4 {
+                            self.parse_method(self.method_buf);
+                        }
+                    }
+                }
+                HttpRequestParserState::SkipSpace => {
+                    buf_pos += 1;
+                }
+                HttpRequestParserState::ParsePath => {
+                    let prev_pos = buf_pos;
+                    while buf_pos < buf.len() && buf[buf_pos] != b'/' {
+                        buf_pos += 1;
+                    }
+                    self.cur_path_component.extend(&buf[prev_pos..buf_pos]);
+                    if buf[buf_pos] == b'/' {
+                        self.path
+                            .push(unsafe { String::from_utf8_unchecked(self.cur_path_component.clone()) });
+                    }
+                }
+                HttpRequestParserState::SkipHeader => {
+                    self.method_pos += 1;
+                }
+                HttpRequestParserState::ParseBody => {
+                    self.buf.extend_from_slice(buf);
+                }
+            }
+        }
+    }
+
+}
+
+async fn conn_dispatcher(mut stream: TcpStream) {
+    let mut temp_buffer = [0u8; 4096];
+    let mut ctx = ParserContext::new();
+    let (result, temp_buffer) = stream.read(temp_buffer).await;
+    match result {
+        Ok(0) => {
+            println!("Connection closed");
+            return;
+        }
+        Ok(_) => {
+            ctx.buf.extend_from_slice(&temp_buffer[..result.unwrap()]);
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+            return;
+        }
     }
 }
 
