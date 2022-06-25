@@ -299,8 +299,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             value: format!("value{}", i),
         });
     let tik = Instant::now();
+    let mut handles = vec![];
     for kv in kvs {
-        add(kv.key, kv.value).await.unwrap();
+        handles.push(tokio::spawn(async move {
+            add(kv.key, kv.value).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
     }
     let tok = Instant::now();
     let insrt_duration = tok.duration_since(tik);
@@ -308,8 +314,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Benchmark query
     let tik = Instant::now();
+    let mut handles = vec![];
     for i in 0..N {
-        query(format!("key{}", i)).await.unwrap();
+        handles.push(tokio::spawn(async move {
+            query(format!("key{}", i)).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
     }
     let tok = Instant::now();
     let query_duration = tok.duration_since(tik);
@@ -317,8 +329,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Benchmark del
     let tik = Instant::now();
+    let mut handles = vec![];
     for i in 0..N {
-        del(format!("key{}", i)).await.unwrap();
+        handles.push(tokio::spawn(async move {
+            del(format!("key{}", i)).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
     }
     let tok = Instant::now();
     let del_duration = tok.duration_since(tik);
