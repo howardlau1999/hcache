@@ -103,7 +103,11 @@ replace-with = 'tuna'
 [source.tuna]
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
-      
+      cat <<EOF >> /etc/security/limits.conf 
+* hard memlock unlimited
+* soft memlock unlimited
+EOF
+
       NOTIFY
       `),
     });

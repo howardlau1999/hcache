@@ -1,9 +1,10 @@
 use std::fmt::Display;
 
-use hyper::{Body, Client, Method, Request, StatusCode};
+use hyper::{Body, Client, Method, Request, StatusCode, client::HttpConnector};
 mod dto;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use lazy_static::lazy_static;
+use tokio::time::Instant;
 
 lazy_static! {
     pub static ref HOST: String = {
@@ -11,10 +12,23 @@ lazy_static! {
             std::env::var("HCACHE_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string()),
         )
     };
+    pub static ref CLIENT: Client<HttpConnector> = {
+        let client = Client::new();
+        client
+    };
+    pub static ref ADD_ENDPOINT: String = {
+        format!("{}/add", *HOST)
+    };
+    pub static ref BATCH_ENDPOINT: String = {
+        format!("{}/batch", *HOST)
+    };
+    pub static ref LIST_ENDPOINT: String = {
+        format!("{}/list", *HOST)
+    };
 }
 
 async fn query(key: String) -> Option<String> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let resp = client
         .get(format!("{}/query/{}", *HOST, key).parse().unwrap())
         .await
@@ -36,7 +50,7 @@ async fn query(key: String) -> Option<String> {
 }
 
 async fn del(key: String) -> Result<(), ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let resp = client
         .get(format!("{}/del/{}", *HOST, key).parse().unwrap())
         .await
@@ -48,11 +62,11 @@ async fn del(key: String) -> Result<(), ()> {
 }
 
 async fn add(key: String, value: String) -> Result<(), ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let req = InsrtRequest { key, value };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/add", *HOST))
+        .uri(&*ADD_ENDPOINT)
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -63,10 +77,10 @@ async fn add(key: String, value: String) -> Result<(), ()> {
 }
 
 async fn batch(kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/batch", *HOST))
+        .uri(&*BATCH_ENDPOINT)
         .body(Body::from(serde_json::to_string(&kvs).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -77,10 +91,10 @@ async fn batch(kvs: Vec<InsrtRequest>) -> Result<(), ()> {
 }
 
 async fn list(keys: Vec<String>) -> Result<Vec<InsrtRequest>, ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/list", *HOST))
+        .uri(&*LIST_ENDPOINT)
         .body(Body::from(serde_json::to_string(&keys).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -101,7 +115,7 @@ async fn list(keys: Vec<String>) -> Result<Vec<InsrtRequest>, ()> {
 }
 
 async fn zadd(key: String, score: u32, value: String) -> Result<(), ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let req = ScoreValue { score, value };
     let req = Request::builder()
         .method(Method::POST)
@@ -116,7 +130,7 @@ async fn zadd(key: String, score: u32, value: String) -> Result<(), ()> {
 }
 
 async fn zrange(key: String, min_score: u32, max_score: u32) -> Result<Vec<ScoreValue>, ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let req = ScoreRange {
         min_score,
         max_score,
@@ -144,7 +158,7 @@ async fn zrange(key: String, min_score: u32, max_score: u32) -> Result<Vec<Score
 }
 
 async fn zrmv(key: String, value: String) -> Result<(), ()> {
-    let client = Client::new();
+    let client = &*CLIENT;
     let resp = client
         .get(format!("{}/zrmv/{}/{}", *HOST, key, value).parse().unwrap())
         .await
@@ -165,7 +179,7 @@ fn expect<T: PartialEq + Display>(msg: &str, actual: T, expected: T) {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Test init
     {
-        let client = Client::new();
+        let client = &*CLIENT;
         let resp = client
             .get(format!("{}/init", *HOST).parse().unwrap())
             .await
@@ -276,5 +290,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     zrange("zset".into(), 0, 0).await.unwrap_err();
 
     println!("correct");
+
+    // Benchmark add
+    const N: usize = 10000;
+    let kvs = (0..N)
+        .map(|i| InsrtRequest {
+            key: format!("key{}", i),
+            value: format!("value{}", i),
+        });
+    let tik = Instant::now();
+    for kv in kvs {
+        add(kv.key, kv.value).await.unwrap();
+    }
+    let tok = Instant::now();
+    let insrt_duration = tok.duration_since(tik);
+    println!("N: {} insrt_duration: {:?}", N, insrt_duration);
+
+    // Benchmark query
+    let tik = Instant::now();
+    for i in 0..N {
+        query(format!("key{}", i)).await.unwrap();
+    }
+    let tok = Instant::now();
+    let query_duration = tok.duration_since(tik);
+    println!("N: {} query_duration: {:?}", N, query_duration);
+
+    // Benchmark del
+    let tik = Instant::now();
+    for i in 0..N {
+        del(format!("key{}", i)).await.unwrap();
+    }
+    let tok = Instant::now();
+    let del_duration = tok.duration_since(tik);
+    println!("N: {} del_duration: {:?}", N, del_duration);
+
+    // Benchmark batch
+    let kvs = (0..N)
+        .map(|i| InsrtRequest {
+            key: format!("key{}", i),
+            value: format!("value{}", i),
+        })
+        .collect();
+    let tik = Instant::now();
+    batch(kvs).await.unwrap();
+    let tok = Instant::now();
+    let batch_duration = tok.duration_since(tik);
+    println!("N: {} batch_duration: {:?}", N, batch_duration);
+
     Ok(())
 }
