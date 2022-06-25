@@ -1,15 +1,17 @@
 mod dto;
 
-use dto::{InsrtRequest, ScoreValue, ScoreRange};
+use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use futures::Future;
 use hyper::{server::conn::Http, service::service_fn};
 use hyper::{Body, Method, Request, Response, StatusCode};
 use monoio::net::TcpListener;
 use monoio_compat::TcpStreamCompat;
-use rocksdb::{Options, WriteBatch, DB};
+use parking_lot::RwLock;
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
-use std::{cell::RefCell, net::SocketAddr, path::Path, rc::Rc};
+use std::sync::Arc;
+use std::{net::SocketAddr, path::Path};
 
 #[derive(Clone)]
 struct HyperExecutor;
@@ -27,16 +29,15 @@ where
 pub(crate) async fn serve_http<S, F, R, A>(
     addr: A,
     mut service: S,
-    storage: Storage,
+    storage: Arc<Storage>,
 ) -> std::io::Result<()>
 where
-    S: FnMut(Request<Body>, Rc<RefCell<Storage>>) -> F + 'static + Copy,
+    S: FnMut(Request<Body>, Arc<Storage>) -> F + 'static + Copy,
     F: Future<Output = Result<Response<Body>, R>> + 'static,
     R: std::error::Error + 'static + Send + Sync,
     A: Into<SocketAddr>,
 {
     let listener = TcpListener::bind(addr.into())?;
-    let storage = Rc::new(RefCell::new(storage));
     loop {
         let (stream, _) = listener.accept().await?;
         let storage = storage.clone();
@@ -56,15 +57,12 @@ pub struct ZSet {
 }
 
 pub struct Storage {
-    db: DB,
-    zsets: HashMap<String, ZSet>,
+    db: DBWithThreadMode<MultiThreaded>,
+    zsets: RwLock<HashMap<String, ZSet>>,
 }
 
-async fn handle_query(
-    key: &str,
-    storage: Rc<RefCell<Storage>>,
-) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.borrow_mut().db;
+async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
+    let db = &storage.db;
     let value = db.get(key.as_bytes()).unwrap();
     match value {
         Some(value) => Ok(Response::new(Body::from(value))),
@@ -75,23 +73,20 @@ async fn handle_query(
     }
 }
 
-async fn handle_del(
-    key: &str,
-    storage: Rc<RefCell<Storage>>,
-) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.borrow_mut().db;
+async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
+    let db = &storage.db;
     db.delete(key).unwrap();
     Ok(Response::new(Body::empty()))
 }
 
 async fn handle_add(
     req: Request<Body>,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
-    let db = &storage.borrow_mut().db;
+    let db = &storage.db;
     db.put(&dto.key, &dto.value).unwrap();
     Ok(Response::new(Body::empty()))
 }
@@ -99,12 +94,12 @@ async fn handle_add(
 async fn handle_zadd(
     key: &str,
     body: Body,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
-    let mut storage = storage.borrow_mut();
-    let zsets = &mut storage.zsets;
+    let zsets = &storage.zsets;
+    let mut zsets = zsets.write();
     let zset = zsets.entry(key.to_string()).or_insert_with(|| ZSet {
         value_to_score: HashMap::new(),
         score_to_values: BTreeMap::new(),
@@ -138,14 +133,13 @@ async fn handle_zadd(
 async fn handle_zrange(
     key: &str,
     body: Body,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreRange = serde_json::from_slice(&data).unwrap();
-    let mut storage = storage.borrow_mut();
-    let zsets = &mut storage.zsets;
-
-    if let Some(zset) = zsets.get_mut(key) {
+    let zsets = &storage.zsets;
+    let zsets = zsets.read();
+    if let Some(zset) = zsets.get(key) {
         let min_score = dto.min_score;
         let max_score = dto.max_score;
         let values: Vec<_> = zset
@@ -177,10 +171,10 @@ async fn handle_zrange(
 async fn handle_zrmv(
     key: &str,
     value: &str,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let mut storage = storage.borrow_mut();
-    let zsets = &mut storage.zsets;
+    let zsets = &storage.zsets;
+    let mut zsets = zsets.write();
     if let Some(zset) = zsets.get_mut(key) {
         if let Some(score) = zset.value_to_score.remove(value) {
             zset.score_to_values.entry(score).and_modify(|values| {
@@ -196,12 +190,12 @@ async fn handle_zrmv(
 
 async fn handle_batch(
     req: Request<Body>,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.borrow_mut().db;
+    let db = &storage.db;
     let mut write_batch = WriteBatch::default();
     for kv in dto {
         write_batch.put(kv.key, kv.value);
@@ -212,13 +206,13 @@ async fn handle_batch(
 
 async fn handle_list(
     req: Request<Body>,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
     let dto = &dto;
-    let db = &storage.borrow_mut().db;
+    let db = &storage.db;
     let values: Result<Vec<InsrtRequest>, ()> = dto
         .into_iter()
         .zip(db.multi_get(dto).into_iter())
@@ -250,7 +244,7 @@ async fn handle_list(
 
 async fn hyper_handler(
     req: Request<Body>,
-    storage: Rc<RefCell<Storage>>,
+    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == &Method::GET {
         let path = req.uri().path();
@@ -288,16 +282,29 @@ fn main() {
     let db_path = Path::new(&args[1]);
     let mut options = Options::default();
     options.create_if_missing(true);
-    let db = DB::open(&options, db_path).unwrap();
-    let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new().enable_all().with_entries(512).build().unwrap();
-    println!("Running http server on 0.0.0.0:8080");
-    rt.block_on(serve_http(
-        ([0, 0, 0, 0], 8080),
-        hyper_handler,
-        Storage {
-            db,
-            zsets: HashMap::new(),
-        },
-    )).unwrap();
-    println!("Http server stopped");
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
+    let thread_count = 4;
+    let storage = Arc::new(Storage {
+        db,
+        zsets: RwLock::new(HashMap::new()),
+    });
+    let mut threads = vec![];
+    for _ in 0..thread_count {
+        let storage = storage.clone();
+        let thread = std::thread::spawn(|| {
+            let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+                .enable_all()
+                .with_entries(512)
+                .build()
+                .unwrap();
+            println!("Running http server on 0.0.0.0:8080");
+            rt.block_on(serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
+                .unwrap();
+            println!("Http server stopped");
+        });
+        threads.push(thread);
+    }
+    for thread in threads {
+        thread.join().unwrap();
+    }
 }
