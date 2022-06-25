@@ -33,7 +33,7 @@
 
 里面写好了两个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH 到开发机上，密码是 `hcache@2022`，默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。运行 `destroy-test-ecs.sh` 可以销毁所有资源，避免浪费钱。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 打包镜像，因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。如果提示 ImageId 不存在那就是镜像还没有创建完成，也是等几分钟之后把输出的命令重新执行就好了。
 
-将镜像的 ID 填到配置生成器里面然后运行 `ros-cdk sync --json`，输出的就是需要提交的 JSON 文件，也可以在 `ros/cdk.out/SubmissionStack.template.json` 文件里面看到。
+将镜像的 ID 填到配置生成器里面然后运行 `ros-cdk sync --json`，输出的就是需要提交的 JSON 文件，也可以在 `ros/cdk.out/SubmissionStack.template.json` 文件里面看到。可以将生成的 JSON 拷出来，后面只需要修改镜像 ID 就行了。
 
 ## Change Log
 
