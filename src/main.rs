@@ -186,6 +186,9 @@ async fn handle_zrmv(
             zset.score_to_values.entry(score).and_modify(|values| {
                 values.remove(value);
             });
+            if zset.value_to_score.is_empty() {
+                zsets.remove(key);
+            }
         }
     }
     Ok(Response::new(Body::empty()))
