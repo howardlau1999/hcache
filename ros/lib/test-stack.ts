@@ -30,7 +30,9 @@ export class TestStack extends ros.Stack {
     // 指定系统镜像、系统密码、实例类型
     const ecsImageId = new ros.RosParameter(this, "ecs_image_id", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "debian_11_3_x64_20G_alibase_20220531.vhd",
+      // defaultValue: "debian_11_3_x64_20G_alibase_20220531.vhd",
+      // 这个是编译过一次代码的镜像，基于这个开发会更快
+      defaultValue: "m-2zefx7m3m0be84ma3ghb",
     });
     const ecsPassword = new ros.RosParameter(this, "ecs_password", {
       type: ros.RosParameterType.STRING,
@@ -77,21 +79,8 @@ export class TestStack extends ros.Stack {
     });
 
     // 构建 ECS
-    const ecsGroups = new ecs.InstanceGroup(this, 'hcache-test', {
-      maxAmount: 1,
-      vpcId: vpc.attrVpcId,
-      vSwitchId: vswitch.attrVSwitchId,
-      imageId: ecsImageId,
-      securityGroupId: sg.attrSecurityGroupId,
-      instanceType: ecsInstanceType,
-      instanceName: 'hcahce-test-ecs',
-      systemDiskCategory: ecsSystemDiskCategory,
-      password: ecsPassword,
-      spotStrategy: 'SpotAsPriceGo',
-      allocatePublicIp: true,
-      internetMaxBandwidthOut: 1,
-      internetChargeType: 'PayByTraffic',
-      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, `#!/bin/bash
+    // 如果是从 Debian 官方镜像创建的话，就需要安装工具链
+    const startupScriptFromCleanImage =  `#!/bin/bash
 
       apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
@@ -111,7 +100,27 @@ EOF
 EOF
 
       NOTIFY
-      `),
+      `;
+    
+    // 用自己准备好的景象的话就不需要安装工具链
+    const startupScript = `#!/bin/bash
+    NOTIFY
+    `
+    const ecsGroups = new ecs.InstanceGroup(this, 'hcache-test', {
+      maxAmount: 1,
+      vpcId: vpc.attrVpcId,
+      vSwitchId: vswitch.attrVSwitchId,
+      imageId: ecsImageId,
+      securityGroupId: sg.attrSecurityGroupId,
+      instanceType: ecsInstanceType,
+      instanceName: 'hcahce-test-ecs',
+      systemDiskCategory: ecsSystemDiskCategory,
+      password: ecsPassword,
+      spotStrategy: 'SpotAsPriceGo',
+      allocatePublicIp: true,
+      internetMaxBandwidthOut: 1,
+      internetChargeType: 'PayByTraffic',
+      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, startupScript),
     });
 
     new ros.RosOutput(this, 'instance_id', { value: ros.Fn.select(0, ecsGroups.getAtt('InstanceIds')) });
