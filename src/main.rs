@@ -283,22 +283,21 @@ async fn hyper_handler(
         .unwrap())
 }
 
-#[monoio::main]
-async fn main() {
+fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let db_path = Path::new(&args[1]);
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DB::open(&options, db_path).unwrap();
+    let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new().enable_all().with_entries(512).build().unwrap();
     println!("Running http server on 0.0.0.0:8080");
-    let _ = serve_http(
+    rt.block_on(serve_http(
         ([0, 0, 0, 0], 8080),
         hyper_handler,
         Storage {
             db,
             zsets: HashMap::new(),
         },
-    )
-    .await;
+    )).unwrap();
     println!("Http server stopped");
 }
