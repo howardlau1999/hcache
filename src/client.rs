@@ -3,14 +3,19 @@ use std::fmt::Display;
 use hyper::{Body, Client, Method, Request, StatusCode};
 mod dto;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
+use lazy_static::lazy_static;
 
-const HOST: &str = "http://localhost:8080";
+lazy_static! {
+    pub static ref HOST: String = {
+        String::from(std::env::var("HCACHE_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string()))
+    };
+}
 
 async fn query(key: String) -> Option<String> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("{}/query/{}", HOST, key)
+            format!("{}/query/{}", *HOST, key)
                 .parse()
                 .unwrap(),
         )
@@ -36,7 +41,7 @@ async fn del(key: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("{}/del/{}", HOST, key)
+            format!("{}/del/{}", *HOST, key)
                 .parse()
                 .unwrap(),
         )
@@ -53,7 +58,7 @@ async fn add(key: String, value: String) -> Result<(), ()> {
     let req = InsrtRequest { key, value };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/add", HOST))
+        .uri(format!("{}/add", *HOST))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -67,7 +72,7 @@ async fn batch(kvs: Vec<InsrtRequest>) -> Result<(), ()> {
     let client = Client::new();
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/batch", HOST))
+        .uri(format!("{}/batch", *HOST))
         .body(Body::from(serde_json::to_string(&kvs).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -81,7 +86,7 @@ async fn list(keys: Vec<String>) -> Result<Vec<InsrtRequest>, ()> {
     let client = Client::new();
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/list", HOST))
+        .uri(format!("{}/list", *HOST))
         .body(Body::from(serde_json::to_string(&keys).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -106,7 +111,7 @@ async fn zadd(key: String, score: u32, value: String) -> Result<(), ()> {
     let req = ScoreValue { score, value };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/zadd/{}", HOST, key))
+        .uri(format!("{}/zadd/{}", *HOST, key))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -124,7 +129,7 @@ async fn zrange(key: String, min_score: u32, max_score: u32) -> Result<Vec<Score
     };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("{}/zrange/{}", HOST, key))
+        .uri(format!("{}/zrange/{}", *HOST, key))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -148,7 +153,7 @@ async fn zrmv(key: String, value: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("{}/zrmv/{}/{}", HOST, key, value)
+            format!("{}/zrmv/{}/{}", *HOST, key, value)
                 .parse()
                 .unwrap(),
         )
@@ -168,6 +173,13 @@ fn expect<T: PartialEq + Display>(msg: &str, actual: T, expected: T) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Test init
+    {
+        let client = Client::new();
+        let resp = client.get(format!("{}/init", *HOST).parse().unwrap()).await.unwrap();
+        expect("init ok", resp.status(), StatusCode::OK);
+    }
+
     // Test add and query
     add("hello".into(), "world".into()).await.unwrap();
     let value = query("hello".into()).await.unwrap();

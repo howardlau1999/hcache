@@ -232,6 +232,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hyper",
+ "lazy_static",
  "monoio",
  "monoio-compat",
  "parking_lot",
