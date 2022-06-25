@@ -11,6 +11,6 @@ cdk.out
 .parcel-cache
 
 # Account config and stack info
-./account.config.json
-./stack.info.json
+account.config.json
+stack.info.json
 

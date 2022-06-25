@@ -1,11 +1,11 @@
 import { expect as expectCDK, matchTemplate, MatchStyle } from '@alicloud/ros-cdk-assert';
 import * as ros from '@alicloud/ros-cdk-core';
-import * as Ros from '../lib/ros-stack';
+import * as Ros from '../lib/submission-stack';
 
 test('Stack with version.', () => {
   const app = new ros.App();
   // WHEN
-  const stack = new Ros.RosStack(app, 'Tianchi Distributed Cache Service');
+  const stack = new Ros.SubmissionStack(app, 'Tianchi Distributed Cache Service Submission Stack');
   // THEN
   expectCDK(stack).to(
     matchTemplate(

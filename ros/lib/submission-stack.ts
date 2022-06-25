@@ -3,10 +3,10 @@ import * as ecs from "@alicloud/ros-cdk-ecs";
 import * as ROS from '@alicloud/ros-cdk-ros';
 import * as vpc from '@alicloud/ros-cdk-vpc';
 
-export class RosStack extends ros.Stack {
+export class SubmissionStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
     super(scope, id, props);
-    new ros.RosInfo(this, ros.RosInfo.description, "Tianchi Distributed Cache Service");
+    new ros.RosInfo(this, ros.RosInfo.description, "Tianchi Distributed Cache Service Submission Stack");
     // The code that defines your stack goes here
     const vpcId = new ros.RosParameter(this, "vpc_id", {
       type: ros.RosParameterType.STRING,
@@ -90,6 +90,5 @@ export class RosStack extends ros.Stack {
     });
     new ros.RosOutput(this, 'instance_id', { value: ros.Fn.select(0, ecsGroups.getAtt('InstanceIds')) });
     new ros.RosOutput(this, 'private_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PrivateIps')) });
-    new ros.RosOutput(this, 'public_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PublicIps')) });
   }
 }

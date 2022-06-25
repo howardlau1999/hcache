@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import * as ros from '@alicloud/ros-cdk-core';
-import { RosStack } from '../lib/ros-stack';
+import { SubmissionStack } from '../lib/submission-stack';
+import { TestStack } from '../lib/test-stack';
 
 const app = new ros.App({outdir: './cdk.out'});
-new RosStack(app, 'RosStack');
+new SubmissionStack(app, 'SubmissionStack');
+new TestStack(app, 'TestStack');
 app.synth();
