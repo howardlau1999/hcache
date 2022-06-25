@@ -94,7 +94,7 @@ export class TestStack extends ros.Stack {
       userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, `#!/bin/bash
 
       apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
 [source.crates-io]
