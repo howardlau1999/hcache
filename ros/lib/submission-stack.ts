@@ -83,6 +83,7 @@ export class SubmissionStack extends ros.Stack {
         sudo mkdir /data2
         sudo mount -t nfs -o vers=3,nolock,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport "\${nas_url}" /data2
         cp /data2/* /data/
+        export THREAD_COUNT=$(nproc)
         cd ~ && nohup hcache/target/release/hcache /data 2>&1 &
         ros-notify`
       ),

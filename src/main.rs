@@ -283,7 +283,7 @@ fn main() {
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
-    let thread_count = 4;
+    let thread_count = std::env::var("THREAD_COUNT").unwrap_or("16".to_string()).parse::<u32>().unwrap();
     let storage = Arc::new(Storage {
         db,
         zsets: RwLock::new(HashMap::new()),
