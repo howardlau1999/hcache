@@ -16,7 +16,7 @@ export class SubmissionStack extends ros.Stack {
       type: ros.RosParameterType.STRING,
       associationProperty: "ALIYUN::ECS::Instance::ZoneId",
     });
-    const vswitchId = new ros.RosParameter(this, "vswitch_id", {
+    const vSwitchId = new ros.RosParameter(this, "vswitch_id", {
       type: ros.RosParameterType.STRING, 
       associationProperty: "ALIYUN::ECS::VSwitch::VSwitchId",
       associationPropertyMetadata: {
@@ -65,7 +65,7 @@ export class SubmissionStack extends ros.Stack {
     });
     const ecsGroups = new ecs.InstanceGroup(this, 'EcsService', {
       vpcId: vpcId,
-      vSwitchId: vswitchId,
+      vSwitchId: vSwitchId,
       imageId: ecsImageId,
       maxAmount: 1,
       securityGroupId: securityGroupId,
@@ -90,5 +90,6 @@ export class SubmissionStack extends ros.Stack {
     });
     new ros.RosOutput(this, 'instance_id', { value: ros.Fn.select(0, ecsGroups.getAtt('InstanceIds')) });
     new ros.RosOutput(this, 'private_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PrivateIps')) });
+    new ros.RosOutput(this, 'public_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PublicIps')) });
   }
 }

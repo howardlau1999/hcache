@@ -77,7 +77,8 @@ export class TestStack extends ros.Stack {
     });
 
     // 构建 ECS
-    const ecsInstance = new ecs.Instance(this, 'hcache-test', {
+    const ecsGroups = new ecs.InstanceGroup(this, 'hcache-test', {
+      maxAmount: 1,
       vpcId: vpc.attrVpcId,
       vSwitchId: vswitch.attrVSwitchId,
       imageId: ecsImageId,
@@ -104,6 +105,10 @@ EOF
       
       NOTIFY
       `),
-    })
+    });
+
+    new ros.RosOutput(this, 'instance_id', { value: ros.Fn.select(0, ecsGroups.getAtt('InstanceIds')) });
+    new ros.RosOutput(this, 'private_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PrivateIps')) });
+    new ros.RosOutput(this, 'public_ip', { value: ros.Fn.select(0, ecsGroups.getAtt('PublicIps')) });
   }
 }
