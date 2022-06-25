@@ -75,10 +75,10 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let db = &storage.db;
-    let kv = &storage.zsets;
-    let mut kv = kv.write();
     db.delete(key).unwrap();
-    kv.remove(key);
+    let zsets = &storage.zsets;
+    let mut zsets = zsets.write();
+    zsets.remove(key);
     Ok(Response::new(Body::empty()))
 }
 
@@ -91,11 +91,9 @@ async fn handle_add(
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     let db = &storage.db;
     db.put(&dto.key, &dto.value).unwrap();
-    let kv = &storage.zsets;
-    let mut kv = kv.write();
-    if kv.contains_key(&dto.key) {
-        kv.remove(&dto.key);
-    }
+    let zsets = &storage.zsets;
+    let mut zsets = zsets.write();
+    zsets.remove(&dto.key);
     Ok(Response::new(Body::empty()))
 }
 
@@ -168,8 +166,8 @@ async fn handle_zrange(
             })
             .flatten()
             .collect();
-        match serde_json::to_string(&values) {
-            Ok(json) => Ok(Response::new(Body::from(json))),
+        match serde_json::to_vec(&values) {
+            Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
             Err(_) => Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::empty())
@@ -209,7 +207,12 @@ async fn handle_batch(
     let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
     let db = &storage.db;
     let mut write_batch = WriteBatch::default();
+    let zsets = &storage.zsets;
     for kv in dto {
+        {
+            let mut zsets = zsets.write();
+            zsets.remove(&kv.key);
+        }
         write_batch.put(kv.key, kv.value);
     }
     db.write(write_batch).unwrap();
@@ -223,34 +226,32 @@ async fn handle_list(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
-    let dto = &dto;
     let db = &storage.db;
-    let values: Result<Vec<InsrtRequest>, ()> = dto
+    let kvs: Vec<InsrtRequest> = db
+        .multi_get(&dto)
         .into_iter()
-        .zip(db.multi_get(dto).into_iter())
-        .map(|(key, res)| match res {
-            Ok(value) => match value {
-                Some(value) => Ok(InsrtRequest {
-                    key: key.clone(),
-                    value: unsafe { String::from_utf8_unchecked(value) },
-                }),
-                None => Err(()),
-            },
-            Err(_) => Err(()),
+        .zip(dto.into_iter())
+        .filter_map(|(res, key)| match res {
+            Ok(value) => value.map(|value| InsrtRequest {
+                key,
+                value: unsafe { String::from_utf8_unchecked(value) },
+            }),
+            _ => None,
         })
         .collect();
-    match values {
-        Ok(kvs) => match serde_json::to_string(&kvs) {
-            Ok(json_string) => Ok(Response::new(Body::from(json_string))),
+    if kvs.len() != 0 {
+        match serde_json::to_vec(&kvs) {
+            Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
             Err(_) => Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::empty())
                 .unwrap()),
-        },
-        Err(_) => Ok(Response::builder()
+        }
+    } else {
+        Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::empty())
-            .unwrap()),
+            .unwrap())
     }
 }
 

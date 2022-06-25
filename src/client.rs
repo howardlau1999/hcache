@@ -224,6 +224,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Partial hit
+    let keys: Vec<_> = (0..200).map(|i| format!("key{}", i)).collect();
+    let values = list(keys).await.unwrap();
+    expect("return values length", values.len(), 100);
+
+    // All miss
+    let keys: Vec<_> = (100..200).map(|i| format!("key{}", i)).collect();
+    list(keys).await.unwrap_err();
+
     // Test zset add and zrange
     let score_values: Vec<_> = (0..100)
         .map(|i| ScoreValue {
@@ -370,6 +379,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tok = Instant::now();
     let batch_duration = tok.duration_since(tik);
     println!("N: {} batch_duration: {:?}", N, batch_duration);
+
+    // Benchmark list
+    let keys: Vec<_> = (0..N)
+        .map(|i| format!("key{}", i))
+        .collect();
+    let tik = Instant::now();
+    let values = list(keys).await.unwrap();
+    expect("benchmark list length", values.len(), N);
+    let tok = Instant::now();
+    let list_duration = tok.duration_since(tik);
+    println!("N: {} list_duration: {:?}", N, list_duration);
+
+    // Cleanup
+    println!("cleanup...");
+    let mut handles = vec![];
+    for i in 0..N {
+        handles.push(tokio::spawn(async move {
+            del(format!("key{}", i)).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
 
     Ok(())
 }
