@@ -256,6 +256,7 @@ async fn hyper_handler(
             "query" => handle_query(path[2], storage).await,
             "del" => handle_del(path[2], storage).await,
             "zrmv" => handle_zrmv(path[2], path[3], storage).await,
+            "init" => Ok(Response::new(Body::from("ok"))),
             _ => Ok(Response::new(Body::from("unknown"))),
         };
     } else if req.method() == &Method::POST {
