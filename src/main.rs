@@ -3,11 +3,10 @@ mod http_parser;
 
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use futures::Future;
-use hyper::{server::conn::Http, service::service_fn};
+use http_parser::{GET_U32, HTTP_400, POST_U32, HTTP_200};
 use hyper::{Body, Method, Request, Response, StatusCode};
-use monoio::io::AsyncReadRent;
+use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
 use monoio::net::{TcpListener, TcpStream};
-use monoio_compat::TcpStreamCompat;
 use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
@@ -30,7 +29,7 @@ where
 
 pub(crate) async fn serve_http<S, F, R, A>(
     addr: A,
-    mut service: S,
+    _service: S,
     storage: Arc<Storage>,
 ) -> std::io::Result<()>
 where
@@ -43,13 +42,7 @@ where
     loop {
         let (stream, _) = listener.accept().await?;
         let storage = storage.clone();
-        monoio::spawn(Http::new().with_executor(HyperExecutor).serve_connection(
-            unsafe { TcpStreamCompat::new(stream) },
-            service_fn(move |req| {
-                let storage = storage.clone();
-                service(req, storage)
-            }),
-        ));
+        monoio::spawn(conn_dispatcher(stream, storage));
     }
 }
 
@@ -68,7 +61,7 @@ enum HttpRequestParserState {
 }
 
 struct ParserContext {
-    buf: Vec<u8>,
+    body: Vec<u8>,
     method_pos: usize,
     state: HttpRequestParserState,
     method: HttpMethod,
@@ -76,35 +69,47 @@ struct ParserContext {
     cur_path_component: Vec<u8>,
     path: Vec<String>,
     rnrn_pos: usize,
-    
 }
 
 impl ParserContext {
     fn new() -> Self {
         Self {
-            buf: Vec::new(),
+            body: Vec::new(),
             method_pos: 0,
             state: HttpRequestParserState::ParseMethod,
             method: HttpMethod::Unknown,
             path: Vec::new(),
             cur_path_component: Vec::new(),
             method_buf: [0; 4],
-            rnrn_pos: 0
+            rnrn_pos: 0,
         }
     }
 
     fn parse_method(self: &mut Self, method_buf: [u8; 4]) {
         let method: u32 = unsafe { std::mem::transmute(method_buf) };
-        match method {
-            GET_U32 => {
-                self.method = HttpMethod::Get;
-                self.state = HttpRequestParserState::ParsePath;
+        if method == GET_U32 {
+            self.method = HttpMethod::Get;
+            self.state = HttpRequestParserState::ParsePath;
+        } else if method == POST_U32 {
+            self.method = HttpMethod::Post;
+            self.state = HttpRequestParserState::SkipSpace;
+        }
+    }
+
+    async fn write_response(self: &mut Self, mut stream: TcpStream) {
+        match self.method {
+            HttpMethod::Get => {
+                match self.path[1].as_str() {
+                    "init" => {
+                        stream.write_all(HTTP_200.as_bytes()).await.0.unwrap();
+                    },
+                    _ => {},
+                }
             }
-            POST_U32 => {
-                self.method = HttpMethod::Post;
-                self.state = HttpRequestParserState::SkipSpace;
+            HttpMethod::Post => {}
+            HttpMethod::Unknown => {
+                stream.write_all(HTTP_400.as_bytes()).await.0.unwrap();
             }
-            _ => self.method = HttpMethod::Unknown,
         }
     }
 
@@ -115,7 +120,9 @@ impl ParserContext {
                 HttpRequestParserState::ParseMethod => {
                     if self.method_pos == 0 && n >= 4 {
                         buf_pos += 4;
-                        self.parse_method(unsafe { std::mem::transmute(*(buf.as_ptr() as *const u32)) });
+                        self.parse_method(unsafe {
+                            std::mem::transmute(*(buf.as_ptr() as *const u32))
+                        });
                     } else {
                         let diff = std::cmp::max(4 - self.method_pos, n);
                         for i in 0..diff {
@@ -136,38 +143,62 @@ impl ParserContext {
                         buf_pos += 1;
                     }
                     self.cur_path_component.extend(&buf[prev_pos..buf_pos]);
-                    if buf[buf_pos] == b'/' {
-                        self.path
-                            .push(unsafe { String::from_utf8_unchecked(self.cur_path_component.clone()) });
+                    if buf_pos < buf.len() {
+                        if buf[buf_pos] == b'/' {
+                            self.path.push(unsafe {
+                                String::from_utf8_unchecked(self.cur_path_component.clone())
+                            });
+                        } else if buf[buf_pos] == b' ' {
+                            self.state = HttpRequestParserState::SkipHeader;
+                        }
+                        buf_pos += 1;
                     }
                 }
                 HttpRequestParserState::SkipHeader => {
-                    self.method_pos += 1;
+                    while buf_pos < buf.len() {
+                        if self.rnrn_pos == 4 {
+                            self.state = HttpRequestParserState::ParseBody;
+                        }
+                        let expected = match self.rnrn_pos & 1 {
+                            0 => b'\r',
+                            1 => b'\n',
+                            _ => unreachable!(),
+                        };
+                        if buf[buf_pos] == expected {
+                            self.rnrn_pos += 1;
+                        } else {
+                            self.rnrn_pos = 0;
+                        }
+                        buf_pos += 1;
+                    }
                 }
                 HttpRequestParserState::ParseBody => {
-                    self.buf.extend_from_slice(buf);
+                    self.body.extend_from_slice(&buf[buf_pos..]);
                 }
             }
         }
     }
-
 }
 
-async fn conn_dispatcher(mut stream: TcpStream) {
-    let mut temp_buffer = [0u8; 4096];
+async fn conn_dispatcher(mut stream: TcpStream, _storage: Arc<Storage>) {
+    let temp_buffer = [0u8; 4096];
     let mut ctx = ParserContext::new();
-    let (result, temp_buffer) = stream.read(temp_buffer).await;
-    match result {
-        Ok(0) => {
-            println!("Connection closed");
-            return;
-        }
-        Ok(_) => {
-            ctx.buf.extend_from_slice(&temp_buffer[..result.unwrap()]);
-        }
-        Err(e) => {
-            println!("Error: {}", e);
-            return;
+    loop {
+        let (result, temp_buffer) = stream.read(temp_buffer).await;
+        match result {
+            Ok(0) => {
+                println!("stream end");
+                ctx.write_response(stream).await;
+                return;
+            }
+            Ok(n) => {
+                println!("{}", unsafe { String::from_utf8_unchecked(temp_buffer[..n].to_vec()) } );
+                ctx.feed(&temp_buffer, n);
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+                return;
+            }
         }
     }
 }
