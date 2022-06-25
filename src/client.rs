@@ -7,18 +7,16 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     pub static ref HOST: String = {
-        String::from(std::env::var("HCACHE_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string()))
+        String::from(
+            std::env::var("HCACHE_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        )
     };
 }
 
 async fn query(key: String) -> Option<String> {
     let client = Client::new();
     let resp = client
-        .get(
-            format!("{}/query/{}", *HOST, key)
-                .parse()
-                .unwrap(),
-        )
+        .get(format!("{}/query/{}", *HOST, key).parse().unwrap())
         .await
         .unwrap();
     match resp.status() {
@@ -40,11 +38,7 @@ async fn query(key: String) -> Option<String> {
 async fn del(key: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
-        .get(
-            format!("{}/del/{}", *HOST, key)
-                .parse()
-                .unwrap(),
-        )
+        .get(format!("{}/del/{}", *HOST, key).parse().unwrap())
         .await
         .unwrap();
     match resp.status() {
@@ -152,11 +146,7 @@ async fn zrange(key: String, min_score: u32, max_score: u32) -> Result<Vec<Score
 async fn zrmv(key: String, value: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
-        .get(
-            format!("{}/zrmv/{}/{}", *HOST, key, value)
-                .parse()
-                .unwrap(),
-        )
+        .get(format!("{}/zrmv/{}/{}", *HOST, key, value).parse().unwrap())
         .await
         .unwrap();
     match resp.status() {
@@ -176,7 +166,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Test init
     {
         let client = Client::new();
-        let resp = client.get(format!("{}/init", *HOST).parse().unwrap()).await.unwrap();
+        let resp = client
+            .get(format!("{}/init", *HOST).parse().unwrap())
+            .await
+            .unwrap();
         expect("init ok", resp.status(), StatusCode::OK);
     }
 
@@ -202,14 +195,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let keys: Vec<_> = (0..100).map(|i| format!("key{}", i)).collect();
     let values = list(keys).await.unwrap();
     expect("return values length", values.len(), 100);
-    
+
     for (i, value) in values.into_iter().enumerate() {
         expect(
             format!("return key {}", i).as_str(),
             value.key,
             format!("key{}", i),
         );
-        
+
         expect(
             format!("return value {}", i).as_str(),
             value.value,
@@ -225,7 +218,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
         .collect();
     for score_value in score_values {
-        zadd("zset".into(), score_value.score, score_value.value).await.unwrap();
+        zadd("zset".into(), score_value.score, score_value.value)
+            .await
+            .unwrap();
     }
     let score_values = zrange("zset".into(), 0, 49).await.unwrap();
     expect("score_values length (i / 2)", score_values.len(), 100);
@@ -250,7 +245,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
         .collect();
     for score_value in score_values {
-        zadd("zset".into(), score_value.score, score_value.value).await.unwrap();
+        zadd("zset".into(), score_value.score, score_value.value)
+            .await
+            .unwrap();
     }
     let score_values = zrange("zset".into(), 0, 198).await.unwrap();
     expect("score_values length (i * 2)", score_values.len(), 100);
