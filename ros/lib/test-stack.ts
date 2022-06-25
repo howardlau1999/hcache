@@ -92,7 +92,8 @@ export class TestStack extends ros.Stack {
       internetMaxBandwidthOut: 1,
       internetChargeType: 'PayByTraffic',
       userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, `#!/bin/bash
-      sudo apt -y install build-essential curl git
+
+      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config

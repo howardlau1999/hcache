@@ -4,11 +4,13 @@ use hyper::{Body, Client, Method, Request, StatusCode};
 mod dto;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 
+const HOST: &str = "http://localhost:8080";
+
 async fn query(key: String) -> Option<String> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("http://localhost:8080/query/{}", key)
+            format!("{}/query/{}", HOST, key)
                 .parse()
                 .unwrap(),
         )
@@ -34,7 +36,7 @@ async fn del(key: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("http://localhost:8080/del/{}", key)
+            format!("{}/del/{}", HOST, key)
                 .parse()
                 .unwrap(),
         )
@@ -51,7 +53,7 @@ async fn add(key: String, value: String) -> Result<(), ()> {
     let req = InsrtRequest { key, value };
     let req = Request::builder()
         .method(Method::POST)
-        .uri("http://localhost:8080/add")
+        .uri(format!("{}/add", HOST))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -65,7 +67,7 @@ async fn batch(kvs: Vec<InsrtRequest>) -> Result<(), ()> {
     let client = Client::new();
     let req = Request::builder()
         .method(Method::POST)
-        .uri("http://localhost:8080/batch")
+        .uri(format!("{}/batch", HOST))
         .body(Body::from(serde_json::to_string(&kvs).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -79,7 +81,7 @@ async fn list(keys: Vec<String>) -> Result<Vec<InsrtRequest>, ()> {
     let client = Client::new();
     let req = Request::builder()
         .method(Method::POST)
-        .uri("http://localhost:8080/list")
+        .uri(format!("{}/list", HOST))
         .body(Body::from(serde_json::to_string(&keys).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -104,7 +106,7 @@ async fn zadd(key: String, score: u32, value: String) -> Result<(), ()> {
     let req = ScoreValue { score, value };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("http://localhost:8080/zadd/{}", key))
+        .uri(format!("{}/zadd/{}", HOST, key))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -122,7 +124,7 @@ async fn zrange(key: String, min_score: u32, max_score: u32) -> Result<Vec<Score
     };
     let req = Request::builder()
         .method(Method::POST)
-        .uri(format!("http://localhost:8080/zrange/{}", key))
+        .uri(format!("{}/zrange/{}", HOST, key))
         .body(Body::from(serde_json::to_string(&req).unwrap()))
         .unwrap();
     let resp = client.request(req).await.unwrap();
@@ -146,7 +148,7 @@ async fn zrmv(key: String, value: String) -> Result<(), ()> {
     let client = Client::new();
     let resp = client
         .get(
-            format!("http://localhost:8080/zrmv/{}/{}", key, value)
+            format!("{}/zrmv/{}/{}", HOST, key, value)
                 .parse()
                 .unwrap(),
         )

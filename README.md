@@ -31,6 +31,8 @@
 
 `ros` 文件夹是竞赛要求提交的 ROS 配置文件的生成器，我们只需要改里面的 `ecsImageId` 的默认值就可以了。`UserData` 里面的脚本是启动脚本，可以修改。
 
+里面写好了两个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH 到开发机上，密码是 `hcache@2022`，默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。运行 `destroy-test-ecs.sh` 可以销毁所有资源，避免浪费钱。  
+
 按照竞赛的要求，我们需要开一个 ECS 实例，把我们的可执行文件上传上去，然后去控制台制作一个镜像得到镜像的 ID，填到配置生成器里面然后运行 `ros-cdk sync --json`，输出的就是需要提交的 JSON 文件，也可以在 `ros/cdk.out/RosStack.template.json` 文件里面看到。
 
 ## Change Log
@@ -67,6 +69,9 @@ registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 ### 阿里云命令行工具
 
 ```bash
+sudo apt install -y jq
+curl -o- https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz | tar zxvf - 
+chmod +x aliyun && sudo mv aliyun /usr/bin
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
 nvm install 18
 npm config set registry https://npmmirror.com
@@ -74,4 +79,6 @@ npm install -g lerna typescript @alicloud/ros-cdk-cli
 cd ros && npm install
 ```
 
-之后进入 `ros` 文件夹运行 `ros-cdk synth --json`，输出的就是需要提交的 JSON 文件。
+运行 `aliyun configure` 配置 API 密钥，区域填 `cn-beijing`。然后在 `ros` 目录下运行 `ros-cdk load-config` 导入 API 配置。   
+
+之后进入 `ros` 文件夹运行 `ros-cdk synth --json`，输出的就是需要提交的 JSON 文件。运行 `ros-cdk deploy TestStack` 就可以部署测试用的 ECS 了。 
