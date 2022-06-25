@@ -75,7 +75,10 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let db = &storage.db;
+    let kv = &storage.zsets;
+    let mut kv = kv.write();
     db.delete(key).unwrap();
+    kv.remove(key);
     Ok(Response::new(Body::empty()))
 }
 
@@ -88,6 +91,11 @@ async fn handle_add(
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     let db = &storage.db;
     db.put(&dto.key, &dto.value).unwrap();
+    let kv = &storage.zsets;
+    let mut kv = kv.write();
+    if kv.contains_key(&dto.key) {
+        kv.remove(&dto.key);
+    }
     Ok(Response::new(Body::empty()))
 }
 
@@ -98,6 +106,13 @@ async fn handle_zadd(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
+    let db = &storage.db;
+    if db.get(key).unwrap().is_some() {
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::empty())
+            .unwrap());
+    }
     let zsets = &storage.zsets;
     let mut zsets = zsets.write();
     let zset = zsets.entry(key.to_string()).or_insert_with(|| ZSet {
@@ -180,9 +195,6 @@ async fn handle_zrmv(
             zset.score_to_values.entry(score).and_modify(|values| {
                 values.remove(value);
             });
-            if zset.value_to_score.is_empty() {
-                zsets.remove(key);
-            }
         }
     }
     Ok(Response::new(Body::empty()))
@@ -283,7 +295,10 @@ fn main() {
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
-    let thread_count = std::env::var("THREAD_COUNT").unwrap_or("16".to_string()).parse::<u32>().unwrap();
+    let thread_count = std::env::var("THREAD_COUNT")
+        .unwrap_or("16".to_string())
+        .parse::<u32>()
+        .unwrap();
     let storage = Arc::new(Storage {
         db,
         zsets: RwLock::new(HashMap::new()),

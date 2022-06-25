@@ -287,6 +287,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for i in 1..100 {
         zrmv("zset".into(), format!("{}", i)).await.unwrap();
     }
+    let score_values = zrange("zset".into(), 0, 0).await.unwrap();
+    expect("empty zset", score_values.len(), 0);
+
+    // Test delete zset
+    del("zset".into()).await.unwrap();
+    zrange("zset".into(), 0, 0).await.unwrap_err();
+
+    // Test overwrite zset
+    zadd("zset".into(), 0, "a".into()).await.unwrap();
+    let score_values = zrange("zset".into(), 0, 0).await.unwrap();
+    expect("one value in zset", score_values.len(), 1);
+    add("zset".into(), "foo".into()).await.unwrap();
+    zadd("zset".into(), 0, "a".into()).await.unwrap_err();
     zrange("zset".into(), 0, 0).await.unwrap_err();
 
     println!("correct");

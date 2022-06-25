@@ -11,6 +11,12 @@
 - 允许数据丢失，但是数据丢失越多分数越低
 - 如果错误太多无法通过基本测试则没有分数
 
+## 基本思路
+
+实际上是实现两个不同的系统，一个分布式 KV 和一个有序集合。对于分布式 KV，由于不要求范围查询，可以使用哈希索引，也可以使用基数树，最简单的是 Bitcask，RocksDB 有非常多的优化，所以虽然它是有序的，我们也可以以 RocksDB 为参照。对于有序集合，必须使用 O(log N) 的数据结构，在数据插入删除的时候保证顺序。有序集合需要能根据 value 来查询对应的分数，这样才可以在修改分数的时候快速找到对应的分数集合。设计数据结构的时候，需要考虑如何充分利用 Cache 以及挖掘硬件上的并行度。另外，需要考虑持久化的需求，设计落盘的数据结构的时候，尽可能提高加载速度。
+
+具体工程细节上，计划使用 Thread Per Core 和 io-uring 来实现，使用异步编程的方式提高并发度。更进一步，将不同的 Key 分区到不同的 Core 上去执行。当然也可以全局共享一个数据结构，但这样可能会导致激烈的竞争。另外，还可以使用 DPDK 和 SPDK 来将网络和 IO 操作移到用户态去做。
+
 ## API
 
 需要提供以下 HTTP API：
@@ -18,10 +24,10 @@
 - `GET /init`，返回 200 以及 Body 为 `ok` 这个字符串表示启动完成，返回 400 表示启动失败
 - `GET /query/{key}`，获取 Value。返回 200 以及 Body 为 `key` 对应的 `value`，返回 404 表示没有对应的 `key`
 - `GET /del/{key}`，删除 KV。返回 200 表示删除成功，不管 `key` 是否存在
-- `POST /add`，添加一个 KV。请求体为 JSON，格式是 `{"key": "foo", "value": "bar"}`，返回 200 表示设置成功，返回 400 表示设置失败
+- `POST /add`，添加一个 KV。请求体为 JSON，格式是 `{"key": "foo", "value": "bar"}`，返回 200 表示设置成功，**如果之前这个 `key` 是 zset，直接覆盖**，其他情况返回 400 表示设置失败
 - `POST /batch`，批量添加 KV。请求体是 JSON 数组，格式是 `[{"key": "foo", "value": "bar"}, {"key": "bar", "value": "foo"}]`，返回 200 表示设置成功，返回 400 表示设置失败
 - `POST /list`，批量获取 KV。请求体是 JSON 字符串数组，表示需要获取的 `key`，格式是 `["key1", "key2"]`，返回 200 以及 Body 为 JSON 数组，格式是 `[{"key": "foo", "value": "bar"}, {"key": "bar", "value": "foo"}]`，返回 404 表示获取失败
-- `POST /zadd/{key}`，将请求体的 `score` 和 `value` 添加到 `key` 指定的 zset 中，如果 `value` 已存在则更新 `score`。请求体为 JSON，格式是 `{"score": 1, "value": "foo"}`，返回 200 表示设置成功，返回 400 表示设置失败
+- `POST /zadd/{key}`，将请求体的 `score` 和 `value` 添加到 `key` 指定的 zset 中，如果 `value` 已存在则更新 `score`。请求体为 JSON，格式是 `{"score": 1, "value": "foo"}`，返回 200 表示设置成功，**如果这个 `key` 已经被 `add` 过了返回 400 表示设置失败**
 - `GET /zrmv/{key}/{value}`，将 `value` 从 `key` 指定的 zset 中删除。返回 200 表示删除成功，`key` 或者 `value` 不存在也返回 200
 - `POST /zrange/{key}`，获取范围内的所有 `score` 以及对应的所有 `value`。请求体为 JSON，格式是 `{"min_score": 0, "max_score": 10}`，**含两端**，返回 200 以及 Body 为 JSON 数组，格式是 `[{"score": 1, "value": "foo"}, {"score": 1, "value": "bar"}, {"score": 2, value: "baz"}]`，返回 404 表示 zset 不存在
 
