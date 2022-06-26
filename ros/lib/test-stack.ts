@@ -32,7 +32,7 @@ export class TestStack extends ros.Stack {
       type: ros.RosParameterType.STRING,
       // defaultValue: "debian_11_3_x64_20G_alibase_20220531.vhd",
       // 这个是编译过一次代码的镜像，基于这个开发会更快
-      defaultValue: "m-2zefx7m3m0be84ma3ghb",
+      defaultValue: "m-2ze6tbibqok06pny2wx3",
     });
     const ecsPassword = new ros.RosParameter(this, "ecs_password", {
       type: ros.RosParameterType.STRING,
