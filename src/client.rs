@@ -1,4 +1,4 @@
-use std::fmt::{Display, format};
+use std::fmt::Display;
 
 use hyper::{Body, Client, Method, Request, StatusCode, client::HttpConnector};
 mod dto;

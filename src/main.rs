@@ -263,7 +263,7 @@ async fn hyper_handler(
             "del" => handle_del(path[2], storage).await,
             "zrmv" => handle_zrmv(path[2], path[3], storage).await,
             "init" => Ok(Response::new(Body::from("ok"))),
-            _ => Ok(Response::new(Body::from("unknown"))),
+            _ => Ok(Response::new(Body::from("ok"))),
         };
     } else if req.method() == &Method::POST {
         let path = req.uri().path().to_string();
@@ -276,7 +276,7 @@ async fn hyper_handler(
             "zrange" => handle_zrange(path[2], req.into_body(), storage).await,
             _ => Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
-                .body(Body::from("Not Found"))
+                .body(Body::empty())
                 .unwrap()),
         };
     }
