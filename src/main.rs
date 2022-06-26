@@ -11,8 +11,12 @@ use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
+
+const SHARD_COUNT: usize = 256;
+const SHARD_MASK: usize = SHARD_COUNT - 1;
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
@@ -21,7 +25,13 @@ pub struct ZSet {
 
 pub struct Storage {
     db: DBWithThreadMode<MultiThreaded>,
-    zsets: RwLock<HashMap<String, ZSet>>,
+    zsets: Vec<RwLock<HashMap<String, RwLock<ZSet>>>>,
+}
+
+fn get_shard(key: &str) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish() as usize & SHARD_MASK
 }
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
@@ -43,7 +53,8 @@ async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, 
     if let Err(e) = db.delete(key) {
         eprintln!("{:?}", e);
     }
-    let zsets = &storage.zsets;
+    let shard = get_shard(key);
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     zsets.remove(key);
     Ok(Response::new(Body::empty()))
@@ -58,7 +69,8 @@ async fn handle_add(
     let db = &storage.db;
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     {
-        let zsets = &storage.zsets;
+        let shard = get_shard(&dto.key);
+        let zsets = &storage.zsets[shard];
         let mut zsets = zsets.write();
         zsets.remove(&dto.key);
     }
@@ -86,31 +98,33 @@ async fn handle_zadd(
             .body(Body::empty())
             .unwrap());
     }
-    let zsets = &storage.zsets;
+    let shard = get_shard(key);
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
-    let zset = zsets.entry(key.to_string()).or_insert_with(|| ZSet {
+    let zset = zsets.entry(key.to_string()).or_insert_with(|| RwLock::new(ZSet {
         value_to_score: HashMap::new(),
         score_to_values: BTreeMap::new(),
-    });
+    }));
     let value = dto.value;
     let new_score = dto.score;
-    if let Some(score) = zset.value_to_score.get_mut(&value) {
-        if *score != new_score {
+    let old_score = zset.read().value_to_score.get(&value).copied();
+    if let Some(score) = old_score  {
+        if score != new_score {
             // Remove from old score
-            zset.score_to_values.entry(*score).and_modify(|values| {
+            zset.write().score_to_values.entry(score).and_modify(|values| {
                 values.remove(&value);
             });
             // Add to new score
-            zset.score_to_values
+            zset.write().score_to_values
                 .entry(new_score)
                 .or_insert_with(BTreeSet::new)
-                .insert(value);
+                .insert(value.clone());
             // Modify score
-            *score = new_score;
+            zset.write().value_to_score.insert(value, new_score);
         }
     } else {
-        zset.value_to_score.insert(value.clone(), new_score);
-        zset.score_to_values
+        zset.write().value_to_score.insert(value.clone(), new_score);
+        zset.write().score_to_values
             .entry(new_score)
             .or_insert_with(BTreeSet::new)
             .insert(value);
@@ -126,13 +140,14 @@ async fn handle_zrange(
     let data = hyper::body::to_bytes(body).await?;
     match serde_json::from_slice::<ScoreRange>(&data) {
         Ok(dto) => {
-            let zsets = &storage.zsets;
+            let shard = get_shard(key);
+            let zsets = &storage.zsets[shard];
             let zsets = zsets.read();
             match zsets.get(key) {
                 Some(zset) => {
                     let min_score = dto.min_score;
                     let max_score = dto.max_score;
-                    let values: Vec<_> = zset
+                    let values: Vec<_> = zset.read()
                         .score_to_values
                         .range(min_score..=max_score)
                         .map(|(score, assoc_values)| {
@@ -169,11 +184,13 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let zsets = &storage.zsets;
+    let shard = get_shard(key);
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     if let Some(zset) = zsets.get_mut(key) {
-        if let Some(score) = zset.value_to_score.remove(value) {
-            zset.score_to_values.entry(score).and_modify(|values| {
+        let score = zset.write().value_to_score.remove(value);
+        if let Some(score) = score {
+            zset.write().score_to_values.entry(score).and_modify(|values| {
                 values.remove(value);
             });
         }
@@ -192,9 +209,10 @@ async fn handle_batch(
         Ok(dto) => {
             let db = &storage.db;
             let mut write_batch = WriteBatch::default();
-            let zsets = &storage.zsets;
             for kv in dto {
                 {
+                    let shard = get_shard(&kv.key);
+                    let zsets = &storage.zsets[shard];
                     let mut zsets = zsets.write();
                     zsets.remove(&kv.key);
                 }
@@ -364,7 +382,7 @@ fn main() {
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
     let storage = Arc::new(Storage {
         db,
-        zsets: RwLock::new(HashMap::new()),
+        zsets: std::iter::repeat_with(||  RwLock::new(HashMap::new())).take(SHARD_COUNT).collect(),
     });
 
     #[cfg(feature = "tokio")]

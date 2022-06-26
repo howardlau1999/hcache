@@ -172,6 +172,7 @@ fn expect<T: PartialEq + Display>(msg: &str, actual: T, expected: T) {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Test init
+    println!("Test /init");
     {
         let client = &*CLIENT;
         let resp = client
@@ -182,17 +183,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Test add and query
+    println!("Test /add and /query");
     add("hello".into(), "world".into()).await.unwrap();
     let value = query("hello".into()).await.unwrap();
     expect("query hello", value, "world".into());
 
     // Test del
+    println!("Test /del");
     del("hello".into()).await.unwrap();
     if let Some(_) = query("hello".into()).await {
         panic!("value is not deleted");
     }
 
     // Test batch add and list
+    println!("Test /batch and /list");
     let kvs: Vec<_> = (0..100)
         .map(|i| InsrtRequest {
             key: format!("key{}", i),
@@ -219,15 +223,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Partial hit
+    println!("Test /list partial hit");
     let keys: Vec<_> = (0..200).map(|i| format!("key{}", i)).collect();
     let values = list(keys).await.unwrap();
     expect("return values length", values.len(), 100);
 
     // All miss
+    println!("Test /list all miss");
     let keys: Vec<_> = (100..200).map(|i| format!("key{}", i)).collect();
     list(keys).await.unwrap_err();
 
     // Test zset add and zrange
+    println!("Test /zadd and /zrange");
     let score_values: Vec<_> = (0..100)
         .map(|i| ScoreValue {
             score: (i / 2) as u32,
@@ -255,6 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Test zadd existing values
+    println!("Test /zadd existing values");
     let score_values: Vec<_> = (0..100)
         .map(|i| ScoreValue {
             score: (i * 2) as u32,
@@ -282,6 +290,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Test zrmv
+    println!("Test /zrmv");
     zrmv("zset".into(), "0".into()).await.unwrap();
     let score_values = zrange("zset".into(), 0, 0).await.unwrap();
     if score_values.len() != 0 {
@@ -294,10 +303,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     expect("empty zset", score_values.len(), 0);
 
     // Test delete zset
+    println!("Test /del zset");
     del("zset".into()).await.unwrap();
     zrange("zset".into(), 0, 0).await.unwrap_err();
 
     // Test overwrite zset
+    println!("Test /add overwrite zset");
     zadd("zset".into(), 0, "a".into()).await.unwrap();
     let score_values = zrange("zset".into(), 0, 0).await.unwrap();
     expect("one value in zset", score_values.len(), 1);
