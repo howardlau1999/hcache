@@ -100,7 +100,16 @@ root soft nofile 1000000
 * hard nofile 1000000
 * soft nofile 1000000
 EOF
-
+      cat <<EOF >> /etc/sysctl.conf
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.ip_local_reserved_ports = 8080
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_tw_reuse = 1
+net.core.somaxconn = 32768
+net.ipv4.tcp_max_tw_buckets = 30000
+net.ipv4.tcp_sack = 1
+EOF
+      sysctl -p
       NOTIFY
       `;
     

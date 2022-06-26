@@ -9,21 +9,21 @@ edition = "2021"
 futures = "0.3"
 hyper = { version = "0.14", features = ["full"] }
 lazy_static = "1.4.0"
-monoio = { git = "https://github.com/howardlau1999/monoio" , default-features = false, features = ["async-cancel", "bytes", "iouring", "macros", "utils"] }
-monoio-compat = { git = "https://github.com/howardlau1999/monoio" }
+monoio = { git = "https://github.com/howardlau1999/monoio", optional = true, default-features = false, features = ["async-cancel", "bytes", "iouring", "macros", "utils"] }
+monoio-compat = { git = "https://github.com/howardlau1999/monoio", optional = true }
 parking_lot = "0.12.1"
 rocksdb = "0.18.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-glommio = "0.7"
-futures-lite = "1.12.0"
-num_cpus = "1.13.1"
+glommio = { version = "0.7", optional = true }
+futures-lite = { version = "1.12.0", optional = true }
+num_cpus = { version = "1.13.1", optional = true }
 
 [features]
 default = ["tokio"]
-glommio = []
-monoio = []
+glommio = ["dep:glommio", "dep:num_cpus", "dep:futures-lite"]
+monoio = ["dep:monoio", "dep:num_cpus"]
 tokio = []
 
 [[bin]]
