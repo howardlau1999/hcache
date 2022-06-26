@@ -1,8 +1,9 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
+import { readFileSync } from 'fs';
 
-const startupScriptFromCleanImage =  `#!/bin/bash
+const startupScriptFromCleanImage = `#!/bin/bash
 
       apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
@@ -115,6 +116,14 @@ export class TestStack extends ros.Stack {
         securityGroupId: sg.attrSecurityGroupId
       }, true);
     }
+
+    // 密钥导入，默认读取本地的公钥
+    const pubKey = readFileSync(`${process.env.HOME}/.ssh/id_rsa.pub`).toString();
+    const keyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
+      keyPairName: `hcache-key-pair-${process.env.HOSTNAME}-${new Date().getTime()}`,
+      publicKeyBody: pubKey,
+      tags: [{ key: 'hcache', value: process.env.HOSTNAME }],
+    });
 
     // 等待逻辑，用于等待 ECS 中应用安装完成
     const ecsWaitConditionHandle = new ROS.WaitConditionHandle(this, 'RosWaitConditionHandle', {
