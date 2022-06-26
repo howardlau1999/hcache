@@ -11,8 +11,12 @@ use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
+
+const SHARDS_COUNT: usize = 256;
+const SHARD_MASK: usize = SHARDS_COUNT - 1;
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
@@ -22,6 +26,12 @@ pub struct ZSet {
 pub struct Storage {
     db: DBWithThreadMode<MultiThreaded>,
     zsets: RwLock<HashMap<String, ZSet>>,
+}
+
+fn key_shard(key: &str) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish() as usize & SHARD_MASK
 }
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {

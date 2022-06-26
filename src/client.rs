@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, format};
 
 use hyper::{Body, Client, Method, Request, StatusCode, client::HttpConnector};
 mod dto;
@@ -391,12 +391,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let list_duration = tok.duration_since(tik);
     println!("N: {} list_duration: {:?}", n, list_duration);
 
+    // Benchmark zadd
+    let score_values: Vec<_> = (0..n)
+        .map(|i| ScoreValue {
+            score: i as u32,
+            value: format!("{}", i),
+        })
+        .collect();
+    let tik = Instant::now();
+    let mut handles = vec![];
+    for (i, score_value) in score_values.into_iter().enumerate() {
+        handles.push(tokio::spawn(async move {
+            zadd(format!("zset{}", i).into(), score_value.score, score_value.value).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    let tok = Instant::now();
+    let zadd_duration = tok.duration_since(tik);
+    println!("N: {} zadd_duration: {:?}", n, zadd_duration);
+
+    // Benchmark zrange
+    let tik = Instant::now(); 
+    let mut handles = vec![];
+    for i in 0..n {
+        handles.push(tokio::spawn(async move {
+            zrange(format!("zset{}", i).into(), i as u32, i as u32).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    let tok = Instant::now();
+    let zrange_duration = tok.duration_since(tik);
+    println!("N: {} zrange_duration: {:?}", n, zrange_duration);
+
+    // Benchmark zrmv
+    let tik = Instant::now();
+    let mut handles = vec![];
+    for i in 0..n {
+        handles.push(tokio::spawn(async move {
+            zrmv(format!("zset{}", i).into(), format!("{}", i)).await.unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    let tok = Instant::now();
+    let zrmv_duration = tok.duration_since(tik);
+    println!("N: {} zrmv_duration: {:?}", n, zrmv_duration);
+
     // Cleanup
     println!("cleanup...");
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
             del(format!("key{}", i)).await.unwrap();
+            del(format!("zset{}", i)).await.unwrap();
         }));
     }
     for handle in handles {
