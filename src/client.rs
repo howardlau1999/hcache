@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use hyper::{Body, Client, Method, Request, StatusCode, client::HttpConnector};
+use hyper::{client::HttpConnector, Body, Client, Method, Request, StatusCode};
 mod dto;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use lazy_static::lazy_static;
@@ -16,15 +16,9 @@ lazy_static! {
         let client = Client::new();
         client
     };
-    pub static ref ADD_ENDPOINT: String = {
-        format!("{}/add", *HOST)
-    };
-    pub static ref BATCH_ENDPOINT: String = {
-        format!("{}/batch", *HOST)
-    };
-    pub static ref LIST_ENDPOINT: String = {
-        format!("{}/list", *HOST)
-    };
+    pub static ref ADD_ENDPOINT: String = format!("{}/add", *HOST);
+    pub static ref BATCH_ENDPOINT: String = format!("{}/batch", *HOST);
+    pub static ref LIST_ENDPOINT: String = format!("{}/list", *HOST);
 }
 
 async fn query(key: String) -> Option<String> {
@@ -317,12 +311,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("correct");
 
     // Benchmark add
-    let n: usize = std::env::var("N").map_or(10000, |value| value.parse::<usize>().unwrap_or(10000));
-    let kvs = (0..n)
-        .map(|i| InsrtRequest {
-            key: format!("key{}", i),
-            value: format!("value{}", i),
-        });
+    let n: usize =
+        std::env::var("N").map_or(10000, |value| value.parse::<usize>().unwrap_or(10000));
+    let kvs = (0..n).map(|i| InsrtRequest {
+        key: format!("key{}", i).repeat(16),
+        value: String::from_iter(std::iter::repeat('a').take(1024)),
+    });
     let tik = Instant::now();
     let mut handles = vec![];
     for kv in kvs {
@@ -342,7 +336,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
-            query(format!("key{}", i)).await.unwrap();
+            query(format!("key{}", i).repeat(16)).await.unwrap();
         }));
     }
     for handle in handles {
@@ -357,7 +351,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
-            del(format!("key{}", i)).await.unwrap();
+            del(format!("key{}", i).repeat(16)).await.unwrap();
         }));
     }
     for handle in handles {
@@ -368,25 +362,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("N: {} del_duration: {:?}", n, del_duration);
 
     // Benchmark batch
-    let kvs = (0..n)
+    let kvs: Vec<InsrtRequest> = (0..n)
         .map(|i| InsrtRequest {
-            key: format!("key{}", i),
-            value: format!("value{}", i),
+            key: format!("key{}", i).repeat(16),
+            value: String::from_iter(std::iter::repeat('a').take(1024)),
         })
         .collect();
     let tik = Instant::now();
-    batch(kvs).await.unwrap();
+    let mut handles = vec![];
+    for chunk in kvs.chunks(1000) {
+        handles.push(tokio::spawn(batch(chunk.to_vec())));
+    }
+    for handle in handles {
+        handle.await.unwrap().unwrap();
+    }
     let tok = Instant::now();
     let batch_duration = tok.duration_since(tik);
     println!("N: {} batch_duration: {:?}", n, batch_duration);
 
     // Benchmark list
-    let keys: Vec<_> = (0..n)
-        .map(|i| format!("key{}", i))
-        .collect();
+    let keys: Vec<_> = (0..n).map(|i| format!("key{}", i).repeat(16)).collect();
     let tik = Instant::now();
-    let values = list(keys).await.unwrap();
-    expect("benchmark list length", values.len(), n);
+    for chunk in keys.chunks(1000) {
+        let values = list(chunk.to_vec()).await.unwrap();
+        expect("benchmark list length", values.len(), chunk.len());
+    }
     let tok = Instant::now();
     let list_duration = tok.duration_since(tik);
     println!("N: {} list_duration: {:?}", n, list_duration);
@@ -395,14 +395,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let score_values: Vec<_> = (0..n)
         .map(|i| ScoreValue {
             score: i as u32,
-            value: format!("{}", i),
+            value: format!("{}", i).repeat(32),
         })
         .collect();
     let tik = Instant::now();
     let mut handles = vec![];
     for (i, score_value) in score_values.into_iter().enumerate() {
         handles.push(tokio::spawn(async move {
-            zadd(format!("zset{}", i).into(), score_value.score, score_value.value).await.unwrap();
+            zadd(
+                format!("zset{}", i).repeat(16).into(),
+                score_value.score,
+                score_value.value,
+            )
+            .await
+            .unwrap();
         }));
     }
     for handle in handles {
@@ -413,11 +419,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("N: {} zadd_duration: {:?}", n, zadd_duration);
 
     // Benchmark zrange
-    let tik = Instant::now(); 
+    let tik = Instant::now();
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
-            zrange(format!("zset{}", i).into(), i as u32, i as u32).await.unwrap();
+            zrange(format!("zset{}", i).repeat(16).into(), i as u32, i as u32)
+                .await
+                .unwrap();
         }));
     }
     for handle in handles {
@@ -432,7 +440,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
-            zrmv(format!("zset{}", i).into(), format!("{}", i)).await.unwrap();
+            zrmv(format!("zset{}", i).repeat(16), format!("{}", i).repeat(32))
+                .await
+                .unwrap();
         }));
     }
     for handle in handles {
@@ -447,8 +457,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = vec![];
     for i in 0..n {
         handles.push(tokio::spawn(async move {
-            del(format!("key{}", i)).await.unwrap();
-            del(format!("zset{}", i)).await.unwrap();
+            del(format!("key{}", i).repeat(16)).await.unwrap();
+            del(format!("zset{}", i).repeat(16)).await.unwrap();
         }));
     }
     for handle in handles {
