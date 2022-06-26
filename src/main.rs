@@ -1,55 +1,19 @@
 mod dto;
+#[cfg(feature = "glommio")]
+mod glommio_hyper;
+#[cfg(feature = "monoio")]
+mod monoio_hyper;
 
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
-use futures::Future;
-use hyper::{server::conn::Http, service::service_fn};
 use hyper::{Body, Method, Request, Response, StatusCode};
-use monoio::net::TcpListener;
-use monoio_compat::TcpStreamCompat;
 use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::{net::SocketAddr, path::Path};
+use std::path::Path;
+use glommio::{CpuSet, LocalExecutorPoolBuilder, PoolPlacement};
 
-#[derive(Clone)]
-struct HyperExecutor;
-
-impl<F> hyper::rt::Executor<F> for HyperExecutor
-where
-    F: Future + 'static,
-    F::Output: 'static,
-{
-    fn execute(&self, fut: F) {
-        monoio::spawn(fut);
-    }
-}
-
-pub(crate) async fn serve_http<S, F, R, A>(
-    addr: A,
-    mut service: S,
-    storage: Arc<Storage>,
-) -> std::io::Result<()>
-where
-    S: FnMut(Request<Body>, Arc<Storage>) -> F + 'static + Copy,
-    F: Future<Output = Result<Response<Body>, R>> + 'static,
-    R: std::error::Error + 'static + Send + Sync,
-    A: Into<SocketAddr>,
-{
-    let listener = TcpListener::bind(addr.into())?;
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let storage = storage.clone();
-        monoio::spawn(Http::new().with_executor(HyperExecutor).serve_connection(
-            unsafe { TcpStreamCompat::new(stream) },
-            service_fn(move |req| {
-                let storage = storage.clone();
-                service(req, storage)
-            }),
-        ));
-    }
-}
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
@@ -296,31 +260,21 @@ fn main() {
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
-    let thread_count = std::env::var("THREAD_COUNT")
-        .unwrap_or("16".to_string())
-        .parse::<u32>()
-        .unwrap();
     let storage = Arc::new(Storage {
         db,
         zsets: RwLock::new(HashMap::new()),
     });
-    let mut threads = vec![];
-    for _ in 0..thread_count {
-        let storage = storage.clone();
-        let thread = std::thread::spawn(|| {
-            let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
-                .enable_all()
-                .with_entries(512)
-                .build()
-                .unwrap();
-            println!("Running http server on 0.0.0.0:8080");
-            rt.block_on(serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
-                .unwrap();
-            println!("Http server stopped");
-        });
-        threads.push(thread);
-    }
-    for thread in threads {
-        thread.join().unwrap();
-    }
+    LocalExecutorPoolBuilder::new(PoolPlacement::MaxSpread(
+        num_cpus::get(),
+        CpuSet::online().ok(),
+    ))
+    .on_all_shards(|| async move {
+        let id = glommio::executor().id();
+        println!("Starting executor {}", id);
+        glommio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, 1024, storage)
+            .await
+            .unwrap();
+    })
+    .unwrap()
+    .join_all();
 }
