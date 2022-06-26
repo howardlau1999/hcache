@@ -95,8 +95,10 @@ EOF
       cat <<EOF >> /etc/security/limits.conf 
 * hard memlock unlimited
 * soft memlock unlimited
-* hard nofile unlimited
-* soft nofile unlimited
+root hard nofile 1000000
+root soft nofile 1000000
+* hard nofile 1000000
+* soft nofile 1000000
 EOF
 
       NOTIFY

@@ -87,7 +87,7 @@ export class SubmissionStack extends ros.Stack {
         # 启动服务
         cat <<EOF > ~/start.sh
 #!/bin/bash
-export THREAD_COUNT=$(nproc)
+export THREAD_COUNT=\$(nproc)
 cd ~ && nohup hcache/target/release/hcache /data 2>&1 &
 EOF
         chmod +x ~/start.sh
