@@ -317,8 +317,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("correct");
 
     // Benchmark add
-    const N: usize = 10000;
-    let kvs = (0..N)
+    let n: usize = std::env::var("N").map_or(10000, |value| value.parse::<usize>().unwrap_or(10000));
+    let kvs = (0..n)
         .map(|i| InsrtRequest {
             key: format!("key{}", i),
             value: format!("value{}", i),
@@ -335,12 +335,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let tok = Instant::now();
     let insrt_duration = tok.duration_since(tik);
-    println!("N: {} insrt_duration: {:?}", N, insrt_duration);
+    println!("N: {} insrt_duration: {:?}", n, insrt_duration);
 
     // Benchmark query
     let tik = Instant::now();
     let mut handles = vec![];
-    for i in 0..N {
+    for i in 0..n {
         handles.push(tokio::spawn(async move {
             query(format!("key{}", i)).await.unwrap();
         }));
@@ -350,12 +350,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let tok = Instant::now();
     let query_duration = tok.duration_since(tik);
-    println!("N: {} query_duration: {:?}", N, query_duration);
+    println!("N: {} query_duration: {:?}", n, query_duration);
 
     // Benchmark del
     let tik = Instant::now();
     let mut handles = vec![];
-    for i in 0..N {
+    for i in 0..n {
         handles.push(tokio::spawn(async move {
             del(format!("key{}", i)).await.unwrap();
         }));
@@ -365,10 +365,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let tok = Instant::now();
     let del_duration = tok.duration_since(tik);
-    println!("N: {} del_duration: {:?}", N, del_duration);
+    println!("N: {} del_duration: {:?}", n, del_duration);
 
     // Benchmark batch
-    let kvs = (0..N)
+    let kvs = (0..n)
         .map(|i| InsrtRequest {
             key: format!("key{}", i),
             value: format!("value{}", i),
@@ -378,23 +378,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     batch(kvs).await.unwrap();
     let tok = Instant::now();
     let batch_duration = tok.duration_since(tik);
-    println!("N: {} batch_duration: {:?}", N, batch_duration);
+    println!("N: {} batch_duration: {:?}", n, batch_duration);
 
     // Benchmark list
-    let keys: Vec<_> = (0..N)
+    let keys: Vec<_> = (0..n)
         .map(|i| format!("key{}", i))
         .collect();
     let tik = Instant::now();
     let values = list(keys).await.unwrap();
-    expect("benchmark list length", values.len(), N);
+    expect("benchmark list length", values.len(), n);
     let tok = Instant::now();
     let list_duration = tok.duration_since(tik);
-    println!("N: {} list_duration: {:?}", N, list_duration);
+    println!("N: {} list_duration: {:?}", n, list_duration);
 
     // Cleanup
     println!("cleanup...");
     let mut handles = vec![];
-    for i in 0..N {
+    for i in 0..n {
         handles.push(tokio::spawn(async move {
             del(format!("key{}", i)).await.unwrap();
         }));
