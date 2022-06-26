@@ -5,15 +5,14 @@ mod glommio_hyper;
 mod monoio_hyper;
 
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
+
 use hyper::{Body, Method, Request, Response, StatusCode};
 use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::path::Path;
-use glommio::{CpuSet, LocalExecutorPoolBuilder, PoolPlacement};
-
+use std::sync::Arc;
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
@@ -254,16 +253,34 @@ async fn hyper_handler(
         .unwrap())
 }
 
-fn main() {
-    let args = std::env::args().collect::<Vec<_>>();
-    let db_path = Path::new(&args[1]);
-    let mut options = Options::default();
-    options.create_if_missing(true);
-    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
-    let storage = Arc::new(Storage {
-        db,
-        zsets: RwLock::new(HashMap::new()),
-    });
+#[cfg(feature = "tokio")]
+fn tokio_run(storage: Arc<Storage>) {
+    use hyper::{
+        service::{make_service_fn, service_fn},
+        Server,
+    };
+    use std::net::SocketAddr;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+        let make_svc = make_service_fn(|_| {
+            let storage = storage.clone();
+            async move {
+                Ok::<_, hyper::Error>(service_fn(move |req| hyper_handler(req, storage.clone())))
+            }
+        });
+        let server = Server::bind(&addr).serve(make_svc);
+        server.await
+    })
+    .unwrap();
+}
+
+#[cfg(feature = "glommio")]
+fn glommio_run(storage: Arc<Storage>) {
+    use glommio::{CpuSet, LocalExecutorPoolBuilder, PoolPlacement};
     LocalExecutorPoolBuilder::new(PoolPlacement::MaxSpread(
         num_cpus::get(),
         CpuSet::online().ok(),
@@ -277,4 +294,48 @@ fn main() {
     })
     .unwrap()
     .join_all();
+}
+
+#[cfg(feature = "monoio")]
+fn monoio_run(storage: Arc<Storage>) {
+    let mut threads = vec![];
+    for _ in 0..num_cpus::get() {
+        let storage = storage.clone();
+        let thread = std::thread::spawn(|| {
+            let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+                .enable_all()
+                .with_entries(512)
+                .build()
+                .unwrap();
+            println!("Running http server on 0.0.0.0:8080");
+            rt.block_on(serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
+                .unwrap();
+            println!("Http server stopped");
+        });
+        threads.push(thread);
+    }
+    for thread in threads {
+        thread.join().unwrap();
+    }
+}
+
+fn main() {
+    let args = std::env::args().collect::<Vec<_>>();
+    let db_path = Path::new(&args[1]);
+    let mut options = Options::default();
+    options.create_if_missing(true);
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
+    let storage = Arc::new(Storage {
+        db,
+        zsets: RwLock::new(HashMap::new()),
+    });
+
+    #[cfg(feature = "tokio")]
+    tokio_run(storage);
+
+    #[cfg(feature = "glommio")]
+    glommio_run(storage);
+
+    #[cfg(feature = "monoio")]
+    monoio_run(storage);
 }
