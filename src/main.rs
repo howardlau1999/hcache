@@ -326,7 +326,6 @@ fn main() {
     options.create_if_missing(true);
     options.set_allow_mmap_reads(true);
     options.set_allow_mmap_writes(true);
-    options.set_enable_pipelined_write(true);
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
