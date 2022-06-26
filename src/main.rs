@@ -7,10 +7,12 @@ mod monoio_hyper;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 
 use hyper::{Body, Method, Request, Response, StatusCode};
+use lockfree_cuckoohash::LockFreeCuckooHash;
 use parking_lot::RwLock;
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,16 +21,25 @@ pub struct ZSet {
     score_to_values: BTreeMap<u32, BTreeSet<String>>,
 }
 
+const SHARDS_COUNT: usize = 256;
+const SHARD_MASK: u32 = 0xFF;
+
 pub struct Storage {
-    db: DBWithThreadMode<MultiThreaded>,
-    zsets: RwLock<HashMap<String, ZSet>>,
+    kv: Vec<LockFreeCuckooHash<String, String>>,
+    zsets: Vec<RwLock<HashMap<String, ZSet>>>,
+}
+
+fn hash_key(key: &str) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    (hasher.finish() as u32 & SHARD_MASK) as usize
 }
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.db;
-    let value = db.get(key.as_bytes()).unwrap();
-    match value {
-        Some(value) => Ok(Response::new(Body::from(value))),
+    let kv = &storage.kv[hash_key(key)];
+    let guard = lockfree_cuckoohash::pin();
+    match kv.get(key, &guard) {
+        Some(value) => Ok(Response::new(Body::from(value.clone()))),
         None => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::empty())
@@ -37,9 +48,12 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 }
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.db;
-    db.delete(key).unwrap();
-    let zsets = &storage.zsets;
+    let shard = hash_key(key);
+    {
+        let kv = &storage.kv[shard];
+        kv.remove(key);
+    }
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     zsets.remove(key);
     Ok(Response::new(Body::empty()))
@@ -52,11 +66,12 @@ async fn handle_add(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    db.put(&dto.key, &dto.value).unwrap();
-    let zsets = &storage.zsets;
+    let shard = hash_key(&dto.key);
+    let kv = &storage.kv[shard];
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     zsets.remove(&dto.key);
+    kv.insert(dto.key, dto.value);
     Ok(Response::new(Body::empty()))
 }
 
@@ -67,14 +82,18 @@ async fn handle_zadd(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    if db.get(key).unwrap().is_some() {
-        return Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap());
+    let shard = hash_key(key);
+    {
+        let kv = &storage.kv[shard];
+        let guard = lockfree_cuckoohash::pin();
+        if kv.get(key, &guard).is_some() {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .unwrap());
+        }
     }
-    let zsets = &storage.zsets;
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     let zset = zsets.entry(key.to_string()).or_insert_with(|| ZSet {
         value_to_score: HashMap::new(),
@@ -113,7 +132,8 @@ async fn handle_zrange(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreRange = serde_json::from_slice(&data).unwrap();
-    let zsets = &storage.zsets;
+    let shard = hash_key(key);
+    let zsets = &storage.zsets[shard];
     let zsets = zsets.read();
     if let Some(zset) = zsets.get(key) {
         let min_score = dto.min_score;
@@ -149,7 +169,8 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let zsets = &storage.zsets;
+    let shard = hash_key(key);
+    let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
     if let Some(zset) = zsets.get_mut(key) {
         if let Some(score) = zset.value_to_score.remove(value) {
@@ -168,17 +189,11 @@ async fn handle_batch(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    let mut write_batch = WriteBatch::default();
-    let zsets = &storage.zsets;
-    for kv in dto {
-        {
-            let mut zsets = zsets.write();
-            zsets.remove(&kv.key);
-        }
-        write_batch.put(kv.key, kv.value);
+    for ins in dto {
+        let shard = hash_key(&ins.key);
+        let kv = &storage.kv[shard];
+        kv.insert(ins.key, ins.value);
     }
-    db.write(write_batch).unwrap();
     Ok(Response::new(Body::empty()))
 }
 
@@ -189,19 +204,18 @@ async fn handle_list(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await.unwrap();
     let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    let kvs: Vec<InsrtRequest> = db
-        .multi_get(&dto)
-        .into_iter()
-        .zip(dto.into_iter())
-        .filter_map(|(res, key)| match res {
-            Ok(value) => value.map(|value| InsrtRequest {
+    let mut kvs: Vec<InsrtRequest> = vec![];
+    for key in dto {
+        let shard = hash_key(&key);
+        let kv = &storage.kv[shard];
+        let guard = lockfree_cuckoohash::pin();
+        if let Some(value) = kv.get(&key, &guard) {
+            kvs.push(InsrtRequest {
                 key,
-                value: unsafe { String::from_utf8_unchecked(value) },
-            }),
-            _ => None,
-        })
-        .collect();
+                value: value.clone(),
+            });
+        }
+    }
     if kvs.len() != 0 {
         match serde_json::to_vec(&kvs) {
             Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
@@ -325,9 +339,35 @@ fn main() {
     let mut options = Options::default();
     options.create_if_missing(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
+    let mut kv = HashMap::new();
+    for (k, v) in db.iterator(rocksdb::IteratorMode::Start) {
+        unsafe {
+            let k = String::from_utf8_unchecked(k.to_vec());
+            let v = String::from_utf8_unchecked(v.to_vec());
+            kv.insert(k, v);
+        }
+    }
     let storage = Arc::new(Storage {
-        db,
-        zsets: RwLock::new(HashMap::new()),
+        kv: std::iter::repeat_with(|| LockFreeCuckooHash::new())
+            .take(SHARDS_COUNT)
+            .collect(),
+        zsets: std::iter::repeat_with(|| RwLock::new(HashMap::new()))
+            .take(SHARDS_COUNT)
+            .collect(),
+    });
+    std::thread::spawn(|| {
+        let guard = pprof::ProfilerGuard::new(100).unwrap();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            match guard.report().build() {
+                Ok(report) => {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
+                    let file = std::fs::File::create(format!("{}.svg", now.as_secs())).unwrap();
+                    report.flamegraph(file).unwrap();
+                }
+                Err(e) => println!("{}", e),
+            }
+        }
     });
 
     #[cfg(feature = "tokio")]
