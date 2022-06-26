@@ -11,12 +11,8 @@ use parking_lot::RwLock;
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
-
-const SHARDS_COUNT: usize = 256;
-const SHARD_MASK: usize = SHARDS_COUNT - 1;
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
@@ -28,27 +24,25 @@ pub struct Storage {
     zsets: RwLock<HashMap<String, ZSet>>,
 }
 
-fn key_shard(key: &str) -> usize {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    key.hash(&mut hasher);
-    hasher.finish() as usize & SHARD_MASK
-}
-
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let db = &storage.db;
-    let value = db.get(key.as_bytes()).unwrap();
-    match value {
-        Some(value) => Ok(Response::new(Body::from(value))),
-        None => Ok(Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::empty())
-            .unwrap()),
-    }
+    let value = db.get(key.as_bytes()).ok().flatten().map_or_else(
+        || {
+            Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap())
+        },
+        |value| Ok(Response::new(Body::from(value))),
+    );
+    value
 }
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let db = &storage.db;
-    db.delete(key).unwrap();
+    if let Err(e) = db.delete(key) {
+        eprintln!("{:?}", e);
+    }
     let zsets = &storage.zsets;
     let mut zsets = zsets.write();
     zsets.remove(key);
@@ -61,13 +55,21 @@ async fn handle_add(
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
-    let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     let db = &storage.db;
-    db.put(&dto.key, &dto.value).unwrap();
-    let zsets = &storage.zsets;
-    let mut zsets = zsets.write();
-    zsets.remove(&dto.key);
-    Ok(Response::new(Body::empty()))
+    let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
+    {
+        let zsets = &storage.zsets;
+        let mut zsets = zsets.write();
+        zsets.remove(&dto.key);
+    }
+    if let Err(_) = db.put(&dto.key, &dto.value) {
+        Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::empty())
+            .unwrap())
+    } else {
+        Ok(Response::new(Body::empty()))
+    }
 }
 
 async fn handle_zadd(
@@ -78,7 +80,7 @@ async fn handle_zadd(
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
     let db = &storage.db;
-    if db.get(key).unwrap().is_some() {
+    if db.get(key).ok().flatten().is_some() {
         return Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
@@ -122,35 +124,43 @@ async fn handle_zrange(
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    let dto: ScoreRange = serde_json::from_slice(&data).unwrap();
-    let zsets = &storage.zsets;
-    let zsets = zsets.read();
-    if let Some(zset) = zsets.get(key) {
-        let min_score = dto.min_score;
-        let max_score = dto.max_score;
-        let values: Vec<_> = zset
-            .score_to_values
-            .range(min_score..=max_score)
-            .map(|(score, assoc_values)| {
-                assoc_values.into_iter().map(|value| ScoreValue {
-                    score: *score,
-                    value: value.clone(),
-                })
-            })
-            .flatten()
-            .collect();
-        match serde_json::to_vec(&values) {
-            Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
-            Err(_) => Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()),
+    match serde_json::from_slice::<ScoreRange>(&data) {
+        Ok(dto) => {
+            let zsets = &storage.zsets;
+            let zsets = zsets.read();
+            match zsets.get(key) {
+                Some(zset) => {
+                    let min_score = dto.min_score;
+                    let max_score = dto.max_score;
+                    let values: Vec<_> = zset
+                        .score_to_values
+                        .range(min_score..=max_score)
+                        .map(|(score, assoc_values)| {
+                            assoc_values.into_iter().map(|value| ScoreValue {
+                                score: *score,
+                                value: value.clone(),
+                            })
+                        })
+                        .flatten()
+                        .collect();
+                    match serde_json::to_vec(&values) {
+                        Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
+                        Err(_) => Ok(Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::empty())
+                            .unwrap()),
+                    }
+                }
+                None => Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap()),
+            }
         }
-    } else {
-        Ok(Response::builder()
-            .status(StatusCode::NOT_FOUND)
+        Err(_) => Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
-            .unwrap())
+            .unwrap()),
     }
 }
 
@@ -177,19 +187,32 @@ async fn handle_batch(
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
-    let dto: Vec<dto::InsrtRequest> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    let mut write_batch = WriteBatch::default();
-    let zsets = &storage.zsets;
-    for kv in dto {
-        {
-            let mut zsets = zsets.write();
-            zsets.remove(&kv.key);
+
+    match serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data) {
+        Ok(dto) => {
+            let db = &storage.db;
+            let mut write_batch = WriteBatch::default();
+            let zsets = &storage.zsets;
+            for kv in dto {
+                {
+                    let mut zsets = zsets.write();
+                    zsets.remove(&kv.key);
+                }
+                write_batch.put(kv.key, kv.value);
+            }
+            match db.write(write_batch) {
+                Ok(_) => Ok(Response::new(Body::empty())),
+                Err(_) => Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::empty())
+                    .unwrap()),
+            }
         }
-        write_batch.put(kv.key, kv.value);
+        Err(_) => Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::empty())
+            .unwrap()),
     }
-    db.write(write_batch).unwrap();
-    Ok(Response::new(Body::empty()))
 }
 
 async fn handle_list(
