@@ -4,7 +4,7 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 
 const startupScriptFromCleanImage =  `#!/bin/bash
 
-      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux
+      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
