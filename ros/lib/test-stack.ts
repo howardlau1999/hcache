@@ -120,7 +120,7 @@ export class TestStack extends ros.Stack {
     // 密钥导入，默认读取本地的公钥
     const pubKey = readFileSync(`${process.env.HOME}/.ssh/id_rsa.pub`).toString();
     const keyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
-      keyPairName: `hcache-key-pair-${process.env.HOSTNAME}-${new Date().getTime()}`,
+      keyPairName: `hcache-key-pair-${process.env.HOSTNAME}`,
       publicKeyBody: pubKey,
       tags: [{ key: 'hcache', value: process.env.HOSTNAME }],
     });
@@ -139,6 +139,7 @@ export class TestStack extends ros.Stack {
     const ecsGroups = new ecs.InstanceGroup(this, 'hcache-test', {
       maxAmount: 1,
       vpcId: vpc.attrVpcId,
+      keyPairName: keyPair.attrKeyPairName,
       vSwitchId: vswitch.attrVSwitchId,
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
