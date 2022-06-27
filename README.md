@@ -43,7 +43,9 @@
 
 运行 `remote-build.sh` 会自动 SSH 上去拉最新的代码并且编译。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 关机并打包镜像。因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。
 
-之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以运行 `destroy-test-ecs.sh` 删掉 ECS，然后可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 文件，提交这个 zip 文件就行了，不需要手动修改 JSON 文件。
+之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 文件，并且复制一份到 `latest.zip` 避免搞混，提交这个 zip 文件就行了，不需要手动修改 JSON 文件。
+
+等出分的时候，可以用 `start-ecs.sh` 重新开机调试，也可以直接运行 `destroy-test-ecs.sh` 删掉所有云服务资源。如果不删掉的话，即使是关机也是要收费的。
 
 等出分之后记得运行 `delete-image.sh` 删掉镜像，不然也是要扣钱的（出分前别删）。所有删除操作都需要确认。
 
