@@ -16,7 +16,7 @@ use parking_lot::RwLock;
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ const SHARD_MASK: usize = SHARD_COUNT - 1;
 
 pub struct ZSet {
     value_to_score: HashMap<String, u32>,
-    score_to_values: BTreeMap<u32, BTreeSet<String>>,
+    score_to_values: BTreeMap<u32, HashSet<String>>,
 }
 
 pub struct Storage {
@@ -257,7 +257,7 @@ async fn handle_zadd(
             zset.write()
                 .score_to_values
                 .entry(new_score)
-                .or_insert_with(BTreeSet::new)
+                .or_insert_with(Default::default)
                 .insert(value.clone());
             // Modify score
             zset.write().value_to_score.insert(value, new_score);
@@ -267,7 +267,7 @@ async fn handle_zadd(
         zset.write()
             .score_to_values
             .entry(new_score)
-            .or_insert_with(BTreeSet::new)
+            .or_insert_with(Default::default)
             .insert(value);
     }
     Ok(Response::new(Body::empty()))
