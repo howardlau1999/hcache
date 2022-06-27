@@ -4,3 +4,6 @@
 [submodule "cpp/third_party/rocksdb"]
 	path = cpp/third_party/rocksdb
 	url = https://ghproxy.com/https://github.com/facebook/rocksdb
+[submodule "cpp/third_party/folly"]
+	path = cpp/third_party/folly
+	url = https://ghproxy.com/https://github.com/facebook/folly

@@ -23,11 +23,32 @@ set_property(TARGET librocksdb
     PROPERTY IMPORTED_LOCATION 
     "${source_dir}/librocksdb.a"
 )
+include_directories("${source_dir}/include")
+
+ExternalProject_Add(libfolly_src
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/folly
+    URL ${CMAKE_CURRENT_LIST_DIR}/third_party/folly
+    SOURCE_DIR ${libfolly_SOURCE_DIR}
+    BUILD_IN_SOURCE 1
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND python3 ./build/fbcode_builder/getdeps.py --allow-system-packages build --scratch-path ${CMAKE_CURRENT_BINARY_DIR}/folly
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
+)
+
+ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
+ExternalProject_Get_Property(librocksdb_src source_dir)
+
+add_library(libfolly STATIC IMPORTED GLOBAL)
+set_property(TARGET libfolly
+    PROPERTY IMPORTED_LOCATION 
+    "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
+)
+include_directories("${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/include")
 
 find_package(ZLIB)
-
 add_subdirectory(third_party/seastar)
-include_directories("${source_dir}/include")
+
 add_executable(hcache src/main.cc)
 add_dependencies(hcache librocksdb_src)
-target_link_libraries(hcache Seastar::seastar librocksdb ZLIB::ZLIB)
+target_link_libraries(hcache Seastar::seastar librocksdb libfolly ZLIB::ZLIB)

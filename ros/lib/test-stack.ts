@@ -8,7 +8,7 @@ const startupScriptFromCleanImage = `#!/bin/bash
 deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
 deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
-      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake
+      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
