@@ -1,6 +1,7 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/log.hh>
+#include <rocksdb/db.h>
 
 using namespace seastar;
 logger applog("app");

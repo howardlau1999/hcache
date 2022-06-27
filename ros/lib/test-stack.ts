@@ -4,8 +4,11 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 
 const startupScriptFromCleanImage = `#!/bin/bash
-
-      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf
+        cat <<EOF > /etc/apt/sources.list
+deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
+deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
+EOF
+      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
@@ -15,7 +18,7 @@ replace-with = 'tuna'
 [source.tuna]
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
-      cat <<EOF >> /etc/security/limits.conf 
+      cat <<EOF | sudo tee -a /etc/security/limits.conf 
 * hard memlock unlimited
 * soft memlock unlimited
 root hard nofile 1000000
@@ -23,7 +26,7 @@ root soft nofile 1000000
 * hard nofile 1000000
 * soft nofile 1000000
 EOF
-      cat <<EOF >> /etc/sysctl.conf
+      cat <<EOF | sudo tee -a /etc/sysctl.conf
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
 net.ipv4.tcp_fin_timeout = 15
