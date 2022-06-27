@@ -43,7 +43,7 @@
 
 ## Change Log
 
-- **2022.06.27(howard)**: 再问了一下工作人员，说是服务 502 了，那应该就是挂了，不知道是不是 panic 了，可能是 RocksDB 不堪重负了，因为已经添加了自启脚本了。添加了一个纯内存实现的 KV，用 Lockfree Cuckoohash 作为 KV 的存储。QPS 终于有分了，总分 16628.4790 (init_score:3.3333, api_score:630.0000, qps_score:13490.1457, delay_score:2508.3333)
+- **2022.06.27(howard)**: 再问了一下工作人员，说是服务 502 了，那应该就是挂了，不知道是不是 panic 了，可能是 RocksDB 不堪重负了，因为已经添加了自启脚本了。添加了一个纯内存实现的 KV，用 Lockfree Cuckoohash 作为 KV 的存储，把 ZSet 相关的哈希表也用 Lockfree Cuckoohash。QPS 终于有分了，score:16966.3373, init_score:1.0000, api_score:630.0000, qps_score:13496.7147, delay_score:2839.6226
 - **2022.06.26(howard)**: 添加了 `glommio` 和 `tokio` 运行时，用 io-uring 的运行时好像都会发生卡死的情况，切回默认使用 `tokio` 了，另外调整了一些内核参数，把端口范围和文件数量限制给改大了。但是 QPS 还是 0 分，原因问了工作人员，说是测 QPS 中途 `/query` 接口报了 `Connection refused`，说明程序启动起来了但是中途运行有问题，可能是爆内存，因为 zset 都是存在内存里，和运行时或者内核应该关系不大，本地测 QPS 应该有 5w。修复了 `list` 接口应该返回部分数据的逻辑，只有在全部 key 都查不到才返回 404，API 分有 630 了。 
 - **2022.06.25(howard)**: 写了镜像相关的脚本，交了第一版上去，600.05 分，QPS 分为 0，API 分没有拿满（满分应该是 630）。写了客户端 Benchmark，自定义服务器 main。添加逻辑，对普通 KV 进行 zadd 操作的时候报错。
 - **2022.06.24(howard)**: 第一版，用 `monoio` 作为异步运行时，使用 RocksDB 作为点查的引擎，用内存的数据结构来保存 zset 也就是有序集合，具体来说，每一个 zset 有两个数据结构，一个是将 value 映射到分数的哈希表，一个是将分数映射到 value 集合的 B 树。写了验证正确性的客户端。
