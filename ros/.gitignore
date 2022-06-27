@@ -15,5 +15,6 @@ account.config.json
 stack.info.json
 stack.outputs.json
 image.latest.json
+application.ros.json
 
 *.zip
