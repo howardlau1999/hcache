@@ -4,11 +4,18 @@ mod glommio_hyper;
 #[cfg(feature = "monoio")]
 mod monoio_hyper;
 
+#[cfg(feature = "memory")]
+use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
+
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 
 use hyper::{Body, Method, Request, Response, StatusCode};
 use parking_lot::RwLock;
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options, WriteBatch};
+
+#[cfg(not(feature = "memory"))]
+use rocksdb::WriteBatch;
+
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -24,8 +31,137 @@ pub struct ZSet {
 }
 
 pub struct Storage {
+    #[cfg(not(feature = "memory"))]
     db: DBWithThreadMode<MultiThreaded>,
+    #[cfg(feature = "memory")]
+    kv: LockFreeCuckooHash<String, String>,
     zsets: Vec<RwLock<HashMap<String, RwLock<ZSet>>>>,
+}
+
+#[cfg(not(feature = "memory"))]
+impl Storage {
+    fn get_kv_in_db(&self, key: &str) -> Option<String> {
+        self.db
+            .get(key)
+            .ok()
+            .flatten()
+            .map(|value| unsafe { String::from_utf8_unchecked(value) })
+    }
+
+    fn insert_kv_in_db(&self, key: &str, value: &str) -> Result<(), ()> {
+        self.db.put(key, value).map_err(|_| ())
+    }
+
+    fn batch_insert_kv_in_db(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
+        let db = &self.db;
+        let mut write_batch = WriteBatch::default();
+        for kv in kvs {
+            {
+                let shard = get_shard(&kv.key);
+                let zsets = &self.zsets[shard];
+                let mut zsets = zsets.write();
+                zsets.remove(&kv.key);
+            }
+            write_batch.put(kv.key, kv.value);
+        }
+        db.write(write_batch).map_err(|_| ())
+    }
+
+    fn list_keys_in_db(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+        self.db
+            .multi_get(&keys)
+            .into_iter()
+            .zip(keys.into_iter())
+            .filter_map(|(res, key)| match res {
+                Ok(value) => value.map(|value| InsrtRequest {
+                    key,
+                    value: unsafe { String::from_utf8_unchecked(value) },
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn remove_key_in_db(&self, key: &str) -> Result<(), ()> {
+        self.db.delete(key).map_err(|_| ())
+    }
+
+    pub fn get_kv(&self, key: &str) -> Option<String> {
+        self.get_kv_in_db(key)
+    }
+
+    pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
+        self.insert_kv_in_db(key, value)
+    }
+
+    pub fn batch_insert_kv(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
+        self.batch_insert_kv_in_db(kvs)
+    }
+
+    pub fn list_keys(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+        self.list_keys_in_db(keys)
+    }
+
+    pub fn remove_key(&self, key: &str) -> Result<(), ()> {
+        self.remove_key_in_db(key)
+    }
+}
+
+#[cfg(feature = "memory")]
+impl Storage {
+    fn get_kv_in_memory(&self, key: &str) -> Option<String> {
+        let guard = pin();
+        self.kv.get(key, &guard).cloned()
+    }
+
+    fn insert_kv_in_memory(&self, key: &str, value: &str) -> Result<(), ()> {
+        self.kv.insert(key.to_string(), value.to_string());
+        Ok(())
+    }
+
+    fn batch_insert_kv_in_memory(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
+        for kv in kvs {
+            self.kv.insert(kv.key, kv.value);
+        }
+        Ok(())
+    }
+
+    fn list_keys_in_memory(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+        keys.into_iter()
+            .filter_map(|key| {
+                let guard = pin();
+                self.kv.get(&key, &guard).map(|value| InsrtRequest {
+                    key,
+                    value: value.clone(),
+                })
+            })
+            .collect()
+    }
+
+    fn remove_key_in_memory(&self, key: &str) -> Result<(), ()> {
+        self.kv.remove(key);
+        Ok(())
+    }
+
+    pub fn get_kv(&self, key: &str) -> Option<String> {
+        self.get_kv_in_memory(key)
+    }
+
+    pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
+        self.insert_kv_in_memory(key, value)
+    }
+
+    pub fn batch_insert_kv(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
+        self.batch_insert_kv_in_memory(kvs)
+    }
+
+    pub fn list_keys(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+        self.list_keys_in_memory(keys)
+    }
+
+    pub fn remove_key(&self, key: &str) -> Result<(), ()> {
+        self.remove_key_in_memory(key)
+    }
 }
 
 fn get_shard(key: &str) -> usize {
@@ -35,8 +171,7 @@ fn get_shard(key: &str) -> usize {
 }
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.db;
-    let value = db.get(key.as_bytes()).ok().flatten().map_or_else(
+    let value = storage.get_kv(key).map_or_else(
         || {
             Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
@@ -49,9 +184,11 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 }
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let db = &storage.db;
-    if let Err(e) = db.delete(key) {
-        eprintln!("{:?}", e);
+    if let Err(_) = storage.remove_key(key) {
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::empty())
+            .unwrap());
     }
     let shard = get_shard(key);
     let zsets = &storage.zsets[shard];
@@ -66,15 +203,14 @@ async fn handle_add(
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
-    let db = &storage.db;
-    let dto: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
+    let kv: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     {
-        let shard = get_shard(&dto.key);
+        let shard = get_shard(&kv.key);
         let zsets = &storage.zsets[shard];
         let mut zsets = zsets.write();
-        zsets.remove(&dto.key);
+        zsets.remove(&kv.key);
     }
-    if let Err(_) = db.put(&dto.key, &dto.value) {
+    if let Err(_) = storage.insert_kv(&kv.key, &kv.value) {
         Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
@@ -91,8 +227,7 @@ async fn handle_zadd(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    if db.get(key).ok().flatten().is_some() {
+    if storage.get_kv(key).is_some() {
         return Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
@@ -101,21 +236,27 @@ async fn handle_zadd(
     let shard = get_shard(key);
     let zsets = &storage.zsets[shard];
     let mut zsets = zsets.write();
-    let zset = zsets.entry(key.to_string()).or_insert_with(|| RwLock::new(ZSet {
-        value_to_score: HashMap::new(),
-        score_to_values: BTreeMap::new(),
-    }));
+    let zset = zsets.entry(key.to_string()).or_insert_with(|| {
+        RwLock::new(ZSet {
+            value_to_score: HashMap::new(),
+            score_to_values: BTreeMap::new(),
+        })
+    });
     let value = dto.value;
     let new_score = dto.score;
     let old_score = zset.read().value_to_score.get(&value).copied();
-    if let Some(score) = old_score  {
+    if let Some(score) = old_score {
         if score != new_score {
             // Remove from old score
-            zset.write().score_to_values.entry(score).and_modify(|values| {
-                values.remove(&value);
-            });
+            zset.write()
+                .score_to_values
+                .entry(score)
+                .and_modify(|values| {
+                    values.remove(&value);
+                });
             // Add to new score
-            zset.write().score_to_values
+            zset.write()
+                .score_to_values
                 .entry(new_score)
                 .or_insert_with(BTreeSet::new)
                 .insert(value.clone());
@@ -124,7 +265,8 @@ async fn handle_zadd(
         }
     } else {
         zset.write().value_to_score.insert(value.clone(), new_score);
-        zset.write().score_to_values
+        zset.write()
+            .score_to_values
             .entry(new_score)
             .or_insert_with(BTreeSet::new)
             .insert(value);
@@ -147,7 +289,8 @@ async fn handle_zrange(
                 Some(zset) => {
                     let min_score = dto.min_score;
                     let max_score = dto.max_score;
-                    let values: Vec<_> = zset.read()
+                    let values: Vec<_> = zset
+                        .read()
                         .score_to_values
                         .range(min_score..=max_score)
                         .map(|(score, assoc_values)| {
@@ -190,9 +333,12 @@ async fn handle_zrmv(
     if let Some(zset) = zsets.get_mut(key) {
         let score = zset.write().value_to_score.remove(value);
         if let Some(score) = score {
-            zset.write().score_to_values.entry(score).and_modify(|values| {
-                values.remove(value);
-            });
+            zset.write()
+                .score_to_values
+                .entry(score)
+                .and_modify(|values| {
+                    values.remove(value);
+                });
         }
     }
     Ok(Response::new(Body::empty()))
@@ -205,32 +351,21 @@ async fn handle_batch(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
 
-    match serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data) {
-        Ok(dto) => {
-            let db = &storage.db;
-            let mut write_batch = WriteBatch::default();
-            for kv in dto {
-                {
-                    let shard = get_shard(&kv.key);
-                    let zsets = &storage.zsets[shard];
-                    let mut zsets = zsets.write();
-                    zsets.remove(&kv.key);
-                }
-                write_batch.put(kv.key, kv.value);
-            }
-            match db.write(write_batch) {
-                Ok(_) => Ok(Response::new(Body::empty())),
-                Err(_) => Ok(Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::empty())
-                    .unwrap()),
-            }
-        }
-        Err(_) => Ok(Response::builder()
+    serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data).map_or(
+        Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
             .unwrap()),
-    }
+        |kvs| {
+            Ok(match storage.batch_insert_kv(kvs) {
+                Ok(_) => Response::new(Body::empty()),
+                Err(_) => Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::empty())
+                    .unwrap(),
+            })
+        },
+    )
 }
 
 async fn handle_list(
@@ -238,35 +373,30 @@ async fn handle_list(
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
-    let data = hyper::body::to_bytes(body).await.unwrap();
-    let dto: Vec<String> = serde_json::from_slice(&data).unwrap();
-    let db = &storage.db;
-    let kvs: Vec<InsrtRequest> = db
-        .multi_get(&dto)
-        .into_iter()
-        .zip(dto.into_iter())
-        .filter_map(|(res, key)| match res {
-            Ok(value) => value.map(|value| InsrtRequest {
-                key,
-                value: unsafe { String::from_utf8_unchecked(value) },
-            }),
-            _ => None,
-        })
-        .collect();
-    if kvs.len() != 0 {
-        match serde_json::to_vec(&kvs) {
-            Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
-            Err(_) => Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()),
-        }
-    } else {
+    let data = hyper::body::to_bytes(body).await?;
+    serde_json::from_slice(&data).map_or(
         Ok(Response::builder()
-            .status(StatusCode::NOT_FOUND)
+            .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
-            .unwrap())
-    }
+            .unwrap()),
+        |keys| {
+            let kvs = storage.list_keys(keys);
+            if kvs.len() != 0 {
+                match serde_json::to_vec(&kvs) {
+                    Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
+                    Err(_) => Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::empty())
+                        .unwrap()),
+                }
+            } else {
+                Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap())
+            }
+        },
+    )
 }
 
 async fn hyper_handler(
@@ -370,6 +500,18 @@ fn monoio_run(storage: Arc<Storage>) {
     }
 }
 
+#[cfg(feature = "memory")]
+fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<String, String>) {
+    for (k, v) in db.iterator(rocksdb::IteratorMode::Start) {
+        unsafe {
+            kv.insert(
+                String::from_utf8_unchecked(k.to_vec()),
+                String::from_utf8_unchecked(v.to_vec()),
+            )
+        };
+    }
+}
+
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let db_path = Path::new(&args[1]);
@@ -379,10 +521,30 @@ fn main() {
     options.set_allow_mmap_writes(true);
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
-    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
+    #[cfg(feature = "memory")]
+    let kv = LockFreeCuckooHash::new();
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path);
+    #[cfg(feature = "memory")]
+    if let Ok(db) = db {
+        let marker_file_path = db_path.join(".loaded");
+        if !marker_file_path.exists() {
+            init_load_kv(db, &kv);
+            if let Err(_) = std::fs::write(marker_file_path, "") {
+                println!("Failed to write marker file");
+            }
+        }
+    }
+    #[cfg(not(feature = "memory"))]
+    let db = db.unwrap();
+
     let storage = Arc::new(Storage {
+        #[cfg(not(feature = "memory"))]
         db,
-        zsets: std::iter::repeat_with(||  RwLock::new(HashMap::new())).take(SHARD_COUNT).collect(),
+        #[cfg(feature = "memory")]
+        kv,
+        zsets: std::iter::repeat_with(|| RwLock::new(HashMap::new()))
+            .take(SHARD_COUNT)
+            .collect(),
     });
 
     #[cfg(feature = "tokio")]

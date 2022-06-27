@@ -32,6 +32,23 @@ net.core.somaxconn = 32768
 net.ipv4.tcp_max_tw_buckets = 30000
 net.ipv4.tcp_sack = 1
 EOF
+
+        # 自动重启脚本
+        cat <<EOF > ~/auto-restart.sh
+#!/bin/bash
+while true; do
+  ~/hcache/target/release/hcache /data
+done
+EOF
+        # 启动脚本
+        cat <<EOF > ~/start.sh
+#!/bin/bash
+export THREAD_COUNT=\\$(nproc)
+cd ~ && nohup ~/auto-restart.sh 2>&1 &
+EOF
+        hmod +x ~/start.sh
+      chmod +x ~/auto-restart.sh
+      
       sysctl -p
       NOTIFY
       `;
