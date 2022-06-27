@@ -159,7 +159,6 @@ impl Storage {
     }
 }
 
-
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let value = storage.get_kv(key).map_or_else(
         || {
@@ -485,13 +484,18 @@ fn monoio_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "memory")]
 fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<String, String>) {
-    for (k, v) in db.iterator(rocksdb::IteratorMode::Start) {
+    let mut iter = db.raw_iterator();
+    iter.seek_to_first();
+    while iter.valid() {
+        let key = iter.key();
+        let value = iter.value();
         unsafe {
             kv.insert(
-                String::from_utf8_unchecked(k.to_vec()),
-                String::from_utf8_unchecked(v.to_vec()),
-            )
-        };
+                String::from_utf8_unchecked(key.unwrap_unchecked().to_vec()),
+                String::from_utf8_unchecked(value.unwrap_unchecked().to_vec()),
+            );
+        }
+        iter.next();
     }
 }
 
