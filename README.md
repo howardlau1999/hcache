@@ -41,7 +41,7 @@
 
 运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH，使用本地的密钥对，没有的话先 `ssh-keygen` 一个。默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。
 
-运行 `remote-build.sh` 会自动 SSH 上去拉最新的代码并且编译。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 打包镜像，因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。
+运行 `remote-build.sh` 会自动 SSH 上去拉最新的代码并且编译。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 关机并打包镜像。因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。
 
 之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以运行 `destroy-test-ecs.sh` 删掉 ECS，然后可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 文件，提交这个 zip 文件就行了，不需要手动修改 JSON 文件。
 
