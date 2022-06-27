@@ -13,7 +13,7 @@ fi
 
 aliyun ecs ModifyImageSharePermission --ImageId="$IMAGE_ID" --RegionId="cn-beijing" --RemoveAccount.1="1828723137315221"
 export SNAPSHOT_ID="$(aliyun ecs DescribeImages --ImageId=$IMAGE_ID | jq -r '.Images.Image[0].DiskDeviceMappings.DiskDeviceMapping[].SnapshotId')"
-aliyun ecs DeleteSnapshot --SnapshotId="$SNAPSHOT_ID"
 aliyun ecs DeleteImage --ImageId="$IMAGE_ID"
+aliyun ecs DeleteSnapshot --SnapshotId="$SNAPSHOT_ID"
 
 rm image.latest.json

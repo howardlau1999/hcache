@@ -37,7 +37,7 @@
 
 `ros` 文件夹是竞赛要求提交的 ROS 配置文件的生成器，我们只需要改里面的 `ecsImageId` 的默认值就可以了。`UserData` 里面的脚本是启动脚本，可以修改。
 
-里面写好了两个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH 到开发机上，密码是 `hcache@2022`，默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。运行 `destroy-test-ecs.sh` 可以销毁所有资源，避免浪费钱。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 打包镜像，因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。如果提示 ImageId 不存在那就是镜像还没有创建完成，也是等几分钟之后把输出的命令重新执行就好了。
+里面写好了两个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH 到开发机上，密码是 `hcache@2022`，默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。运行 `remote-build.sh` 会自动 SSH 上去拉最新的代码并且编译。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 打包镜像，因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`，之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以运行 `destroy-test-ecs.sh` 删掉 ECS，然后可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 文件，提交这个 zip 文件就行了。等出分之后记得运行 `delete-image.sh` 删掉镜像，不然也是要扣钱的。所有删除操作都需要确认。
 
 将镜像的 ID 填到配置生成器里面然后运行 `ros-cdk sync --json`，输出的就是需要提交的 JSON 文件，也可以在 `ros/cdk.out/SubmissionStack.template.json` 文件里面看到。可以将生成的 JSON 拷出来，后面只需要修改镜像 ID 就行了。
 
