@@ -254,11 +254,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             score_value.score,
             (i / 2) as u32,
         );
-        expect(
-            format!("score_value.value {}", i).as_str(),
-            score_value.value,
-            format!("{}", i),
-        );
     }
 
     // Test zadd existing values

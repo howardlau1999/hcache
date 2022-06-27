@@ -16,17 +16,13 @@ use parking_lot::RwLock;
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
-const SHARD_COUNT: usize = 256;
-const SHARD_MASK: usize = SHARD_COUNT - 1;
-
 pub struct ZSet {
-    value_to_score: HashMap<String, u32>,
-    score_to_values: BTreeMap<u32, HashSet<String>>,
+    value_to_score: LockFreeCuckooHash<String, u32>,
+    score_to_values: RwLock<BTreeMap<u32, RwLock<HashSet<String>>>>,
 }
 
 pub struct Storage {
@@ -34,7 +30,7 @@ pub struct Storage {
     db: DBWithThreadMode<MultiThreaded>,
     #[cfg(feature = "memory")]
     kv: LockFreeCuckooHash<String, String>,
-    zsets: Vec<RwLock<HashMap<String, RwLock<ZSet>>>>,
+    zsets: LockFreeCuckooHash<String, ZSet>,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -163,11 +159,6 @@ impl Storage {
     }
 }
 
-fn get_shard(key: &str) -> usize {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    key.hash(&mut hasher);
-    hasher.finish() as usize & SHARD_MASK
-}
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let value = storage.get_kv(key).map_or_else(
@@ -189,10 +180,7 @@ async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, 
             .body(Body::empty())
             .unwrap());
     }
-    let shard = get_shard(key);
-    let zsets = &storage.zsets[shard];
-    let mut zsets = zsets.write();
-    zsets.remove(key);
+    storage.zsets.remove(key);
     Ok(Response::new(Body::empty()))
 }
 
@@ -204,10 +192,7 @@ async fn handle_add(
     let data = hyper::body::to_bytes(body).await?;
     let kv: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     {
-        let shard = get_shard(&kv.key);
-        let zsets = &storage.zsets[shard];
-        let mut zsets = zsets.write();
-        zsets.remove(&kv.key);
+        storage.zsets.remove(&kv.key);
     }
     if let Err(_) = storage.insert_kv(&kv.key, &kv.value) {
         Ok(Response::builder()
@@ -232,42 +217,44 @@ async fn handle_zadd(
             .body(Body::empty())
             .unwrap());
     }
-    let shard = get_shard(key);
-    let zsets = &storage.zsets[shard];
-    let mut zsets = zsets.write();
-    let zset = zsets.entry(key.to_string()).or_insert_with(|| {
-        RwLock::new(ZSet {
-            value_to_score: HashMap::new(),
-            score_to_values: BTreeMap::new(),
-        })
-    });
+    let guard = pin();
+    let zset = storage.zsets.get_or_insert(
+        key.to_string(),
+        ZSet {
+            value_to_score: LockFreeCuckooHash::new(),
+            score_to_values: RwLock::new(Default::default()),
+        },
+        &guard,
+    );
     let value = dto.value;
     let new_score = dto.score;
-    let old_score = zset.read().value_to_score.get(&value).copied();
+    let old_score = zset.value_to_score.get(&value, &guard).copied();
     if let Some(score) = old_score {
         if score != new_score {
-            // Remove from old score
-            zset.write()
-                .score_to_values
-                .entry(score)
-                .and_modify(|values| {
-                    values.remove(&value);
+            {
+                // Remove from old score
+                let mut score_to_values = zset.score_to_values.write();
+
+                score_to_values.entry(score).and_modify(|values| {
+                    values.write().remove(&value);
                 });
-            // Add to new score
-            zset.write()
-                .score_to_values
-                .entry(new_score)
-                .or_insert_with(Default::default)
-                .insert(value.clone());
+                // Add to new score
+                score_to_values
+                    .entry(new_score)
+                    .or_insert_with(Default::default)
+                    .write()
+                    .insert(value.clone());
+            }
             // Modify score
-            zset.write().value_to_score.insert(value, new_score);
+            zset.value_to_score.insert(value, new_score);
         }
     } else {
-        zset.write().value_to_score.insert(value.clone(), new_score);
-        zset.write()
-            .score_to_values
+        zset.value_to_score.insert(value.clone(), new_score);
+        zset.score_to_values
+            .write()
             .entry(new_score)
             .or_insert_with(Default::default)
+            .write()
             .insert(value);
     }
     Ok(Response::new(Body::empty()))
@@ -281,21 +268,20 @@ async fn handle_zrange(
     let data = hyper::body::to_bytes(body).await?;
     match serde_json::from_slice::<ScoreRange>(&data) {
         Ok(dto) => {
-            let shard = get_shard(key);
-            let zsets = &storage.zsets[shard];
-            let zsets = zsets.read();
-            match zsets.get(key) {
+            let guard = pin();
+            match storage.zsets.get(key, &guard) {
                 Some(zset) => {
                     let min_score = dto.min_score;
                     let max_score = dto.max_score;
                     let values: Vec<_> = zset
-                        .read()
                         .score_to_values
+                        .read()
                         .range(min_score..=max_score)
                         .map(|(score, assoc_values)| {
+                            let assoc_values = assoc_values.read().clone();
                             assoc_values.into_iter().map(|value| ScoreValue {
                                 score: *score,
-                                value: value.clone(),
+                                value,
                             })
                         })
                         .flatten()
@@ -326,17 +312,15 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let shard = get_shard(key);
-    let zsets = &storage.zsets[shard];
-    let mut zsets = zsets.write();
-    if let Some(zset) = zsets.get_mut(key) {
-        let score = zset.write().value_to_score.remove(value);
+    let guard = pin();
+    if let Some(zset) = storage.zsets.get(key, &guard) {
+        let score = zset.value_to_score.remove_with_guard(value, &guard);
         if let Some(score) = score {
-            zset.write()
-                .score_to_values
-                .entry(score)
+            zset.score_to_values
+                .write()
+                .entry(*score)
                 .and_modify(|values| {
-                    values.remove(value);
+                    values.write().remove(value);
                 });
         }
     }
@@ -541,9 +525,7 @@ fn main() {
         db,
         #[cfg(feature = "memory")]
         kv,
-        zsets: std::iter::repeat_with(|| RwLock::new(HashMap::new()))
-            .take(SHARD_COUNT)
-            .collect(),
+        zsets: LockFreeCuckooHash::new(),
     });
 
     #[cfg(feature = "tokio")]
