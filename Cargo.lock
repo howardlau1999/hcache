@@ -157,6 +157,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "clippy-utilities"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc5b2535647ee31eb24c1e306dce64401e3dc2a5bce4733b50546d151639b0da"
+
+[[package]]
 name = "concurrent-queue"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -476,6 +482,7 @@ dependencies = [
  "glommio",
  "hyper",
  "lazy_static",
+ "lockfree-cuckoohash",
  "monoio",
  "monoio-compat",
  "num_cpus",
@@ -699,6 +706,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockfree-cuckoohash"
+version = "0.1.0"
+source = "git+https://hub.fastgit.xyz/datenlord/lockfree-cuckoohash#aba9f1d2473739ee7fb09282a2753859761b4314"
+dependencies = [
+ "clippy-utilities",
+ "crossbeam-epoch",
+]
+
+[[package]]
 name = "log"
 version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -773,7 +789,7 @@ dependencies = [
 [[package]]
 name = "monoio"
 version = "0.0.7"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://hub.fastgit.xyz/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "bytes",
  "fxhash",
@@ -790,7 +806,7 @@ dependencies = [
 [[package]]
 name = "monoio-compat"
 version = "0.0.7"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://hub.fastgit.xyz/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "monoio",
  "reusable-box-future",
@@ -800,7 +816,7 @@ dependencies = [
 [[package]]
 name = "monoio-macros"
 version = "0.0.3"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://hub.fastgit.xyz/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "proc-macro2",
  "quote",
