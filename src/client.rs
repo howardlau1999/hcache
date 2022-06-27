@@ -210,15 +210,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     for (i, value) in values.into_iter().enumerate() {
         expect(
-            format!("return key {}", i).as_str(),
-            value.key,
-            format!("key{}", i),
-        );
-
-        expect(
             format!("return value {}", i).as_str(),
             value.value,
-            format!("value{}", i),
+            format!("value{}", &value.key[3..]),
         );
     }
 
@@ -232,6 +226,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Test /list all miss");
     let keys: Vec<_> = (100..200).map(|i| format!("key{}", i)).collect();
     list(keys).await.unwrap_err();
+
+    // Deduplicated
+    println!("Test /list deduplicated");
+    let keys: Vec<_> = (0..100).map(|_| format!("key{}", 0)).collect();
+    let values = list(keys).await.unwrap();
+    expect("return values length", values.len(), 1);
 
     // Test zset add and zrange
     println!("Test /zadd and /zrange");

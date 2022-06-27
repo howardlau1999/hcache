@@ -16,8 +16,7 @@ use parking_lot::RwLock;
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use std::collections::HashMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
@@ -67,7 +66,7 @@ impl Storage {
         db.write(write_batch).map_err(|_| ())
     }
 
-    fn list_keys_in_db(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+    fn list_keys_in_db(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
         self.db
             .multi_get(&keys)
             .into_iter()
@@ -98,7 +97,7 @@ impl Storage {
         self.batch_insert_kv_in_db(kvs)
     }
 
-    pub fn list_keys(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+    pub fn list_keys(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
         self.list_keys_in_db(keys)
     }
 
@@ -126,7 +125,7 @@ impl Storage {
         Ok(())
     }
 
-    fn list_keys_in_memory(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+    fn list_keys_in_memory(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
         keys.into_iter()
             .filter_map(|key| {
                 let guard = pin();
@@ -155,7 +154,7 @@ impl Storage {
         self.batch_insert_kv_in_memory(kvs)
     }
 
-    pub fn list_keys(&self, keys: Vec<String>) -> Vec<InsrtRequest> {
+    pub fn list_keys(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
         self.list_keys_in_memory(keys)
     }
 
@@ -379,8 +378,8 @@ async fn handle_list(
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
             .unwrap()),
-        |keys| {
-            let kvs = storage.list_keys(keys);
+        |keys: Vec<String>| {
+            let kvs = storage.list_keys(HashSet::from_iter(keys));
             if kvs.len() != 0 {
                 match serde_json::to_vec(&kvs) {
                     Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
