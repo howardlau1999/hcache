@@ -46,7 +46,7 @@ export class SubmissionStack extends ros.Stack {
     });
     const ecsImageId = new ros.RosParameter(this, "ecs_image_id", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "m-2ze5iosdwq4l46ldhuwt",
+      defaultValue: "SUBMISSION_IMAGE_ID_PLACEHOLDER",
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,

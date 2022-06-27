@@ -15,3 +15,5 @@ account.config.json
 stack.info.json
 stack.outputs.json
 image.latest.json
+
+*.zip
