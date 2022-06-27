@@ -1,0 +1,3 @@
+[submodule "cpp/seastar"]
+	path = cpp/third_party/seastar
+	url = https://ghproxy.com/https://github.com/scylladb/seastar
