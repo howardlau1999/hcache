@@ -25,7 +25,7 @@ lockfree-cuckoohash = { git = "https://ghproxy.com/https://github.com/datenlord/
 debug = true
 
 [features]
-default = ["glommio", "memory"]
+default = ["tokio", "memory"]
 glommio = ["dep:glommio", "dep:num_cpus", "dep:futures-lite"]
 monoio = ["dep:monoio", "dep:num_cpus"]
 tokio = []
