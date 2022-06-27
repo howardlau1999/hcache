@@ -9,7 +9,7 @@ URL="https://${USERNAME}:${PASSWORD}@ghproxy.com/https://github.com/howardlau199
 ./connect-ecs.sh "if [ -d hcache ]; then \
 cd hcache && git fetch origin && git checkout $BRANCH && git pull --rebase $URL $BRANCH ;\
 else \
-git clone $URL && cd hcache && git checkout $BRANCH ;\
+git clone --recursive $URL && cd hcache && git checkout $BRANCH ;\
 fi"
 ./connect-ecs.sh "rm -rf /data && mkdir -p /data"
 ./connect-ecs.sh "cd hcache && cargo build --release && cargo build"
