@@ -95,7 +95,7 @@ curl -o- https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz | tar zx
 chmod +x aliyun && sudo mv aliyun /usr/bin
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
 nvm install 18
-npm config set registry https://npmmirror.com
+npm config set registry https://registry.npmmirror.com
 npm install -g lerna typescript @alicloud/ros-cdk-cli 
 cd ros && npm install
 ```
