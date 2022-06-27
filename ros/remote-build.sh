@@ -7,7 +7,7 @@ echo -n "GitHub Password: "
 read PASSWORD
 URL="https://${USERNAME}:${PASSWORD}@hub.fastgit.xyz/howardlau1999/hcache"
 ./connect-ecs.sh "if [ -d hcache ]; then \
-cd hcache && git checkout $BRANCH && git pull --rebase $URL $BRANCH ;\
+cd hcache && git fetch origin && git checkout $BRANCH && git pull --rebase $URL $BRANCH ;\
 else \
 git clone $URL && cd hcache && git checkout $BRANCH ;\
 fi"

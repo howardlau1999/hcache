@@ -36,6 +36,7 @@ EOF
         # 自动重启脚本
         cat <<EOF > ~/auto-restart.sh
 #!/bin/bash
+ulimit -n 1000000
 while true; do
   ~/hcache/target/release/hcache /data
 done
@@ -46,9 +47,9 @@ EOF
 export THREAD_COUNT=\\$(nproc)
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
-        hmod +x ~/start.sh
+
+      chmod +x ~/start.sh
       chmod +x ~/auto-restart.sh
-      
       sysctl -p
       NOTIFY
       `;
