@@ -1,39 +1,248 @@
 #include <folly/AtomicHashMap.h>
-#include <folly/String.h>
+#include <folly/ConcurrentSkipList.h>
+#include <folly/FBString.h>
+#include <folly/FBVector.h>
+#include <folly/concurrency/AtomicSharedPtr.h>
+#include <folly/concurrency/ConcurrentHashMap.h>
+#include <folly/container/F14Set.h>
 #include <rocksdb/db.h>
 
+#include <boost/container/flat_map.hpp>
+#include <boost/intrusive/hashtable.hpp>
 #include <seastar/core/app-template.hh>
-#include <seastar/core/seastar.hh>
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/reactor.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/http/common.hh>
 #include <seastar/http/file_handler.hh>
-#include <seastar/http/function_handlers.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/util/log.hh>
 
-using namespace seastar;
-logger applog("app");
+using boost::intrusive::hashtable;
+using seastar::future;
+using seastar::make_ready_future;
+seastar::logger applog("app");
 
-int main(int argc, char** argv) {
+struct key_value {
+  key_value(const folly::basic_fbstring<char> key, const folly::basic_fbstring<char> value) : key(key), value(value) {
+  }
+
+  folly::fbstring key;
+  folly::fbstring value;
+};
+
+struct score_value {
+  uint32_t score;
+  folly::fbstring value;
+};
+
+class zset {
+public:
+  struct unit {};
+  using values_set_ptr =
+      std::shared_ptr<folly::ConcurrentHashMap<folly::fbstring, unit>>;
+  struct score_values {
+    uint32_t score_;
+    values_set_ptr values_;
+  };
+  struct score_values_less {
+    bool operator()(const score_values &lhs, const score_values &rhs) const {
+      return lhs.score_ < rhs.score_;
+    }
+  };
+  using csl = folly::ConcurrentSkipList<score_values, score_values_less>;
+
+  folly::ConcurrentHashMap<folly::fbstring, uint32_t> value_to_score_;
+  std::shared_ptr<csl> score_to_values_;
+
+  folly::Optional<uint32_t> get_score_by_value(folly::fbstring const &value) {
+    auto it = value_to_score_.find(value);
+    if (it != value_to_score_.end()) {
+      return it->second;
+    }
+    return folly::none;
+  }
+
+  void zadd(folly::fbstring const &value, uint32_t score) {
+    auto it = value_to_score_.find(value);
+    if (it != value_to_score_.end()) {
+      // Remove from old score
+      csl::Accessor accessor(score_to_values_);
+      auto old_score_it =
+          accessor.lower_bound(score_values{it->second, nullptr});
+      old_score_it->values_->erase(value);
+      auto new_score_it = accessor.lower_bound(score_values{score, nullptr});
+      if (new_score_it != accessor.end()) {
+        new_score_it->values_->emplace(value, unit{});
+      } else {
+        auto new_values =
+            std::make_shared<folly::ConcurrentHashMap<folly::fbstring, unit>>();
+        new_values->emplace(value, unit{});
+        accessor.insert(score_values{score, new_values});
+      }
+    }
+    // Update score
+    value_to_score_.emplace(value, score);
+  }
+
+  folly::fbvector<values_set_ptr> zrange(uint32_t min_score,
+                                         uint32_t max_score) {
+    folly::fbvector<values_set_ptr> result;
+    csl::Accessor accessor(score_to_values_);
+    csl::Skipper skipper(accessor);
+    if (skipper.to({min_score, nullptr})) {
+      while (skipper.good() && skipper->score_ <= max_score) {
+        result.push_back(skipper->values_);
+        ++skipper;
+      }
+    }
+
+    return {};
+  }
+};
+
+class storage {
+public:
+  using zset_ptr = std::shared_ptr<zset>;
+  using zset_map = folly::ConcurrentHashMap<folly::fbstring, zset_ptr>;
+  zset_map zsets_;
+  folly::ConcurrentHashMap<folly::fbstring, folly::fbstring> kv_;
+
+  folly::Optional<folly::fbstring> get_value_by_key(
+      folly::fbstring const &key) {
+    auto it = kv_.find(key);
+    if (it != kv_.end()) {
+      return it->second;
+    }
+    return folly::none;
+  }
+
+  void add_key_value(folly::fbstring const &key, folly::fbstring const &value) {
+    kv_.emplace(key, value);
+  }
+
+  void del_key(folly::fbstring const &key) {
+    kv_.erase(key);
+    zsets_.erase(key);
+  }
+
+  folly::fbvector<key_value> list_keys(
+      folly::fbvector<folly::fbstring> const &keys) {
+    folly::F14FastSet<folly::fbstring> keys_set;
+    for (auto const &key: keys) {
+      keys_set.insert(key);
+    }
+    folly::fbvector<key_value> result;
+    for (auto const &key: keys_set) {
+      auto it = kv_.find(key);
+      if (it != kv_.end()) {
+        result.emplace_back(key, it->second);
+      }
+    }
+    return result;
+  }
+
+  bool zset_add(folly::fbstring const &key, folly::fbstring const &value,
+                uint32_t score) {
+    auto it = kv_.find(key);
+    if (it != kv_.end()) {
+      return false;
+    }
+    auto zset_it = zsets_.find(key);
+    if (zset_it == zsets_.end()) {
+      auto [new_it, _] = zsets_.emplace(key, std::make_shared<zset>());
+      zset_it = std::move(new_it);
+    }
+    auto &zset = *zset_it->second;
+    zset.zadd(value, score);
+    return true;
+  }
+
+  void zset_rmv(folly::fbstring const &key, folly::fbstring const &value) {
+    auto it = kv_.find(key);
+    if (it != kv_.end()) {
+      return;
+    }
+    auto zset_it = zsets_.find(key);
+    if (zset_it == zsets_.end()) {
+      return;
+    }
+    auto &zset = *zset_it->second;
+    zset.zadd(value, 0);
+  }
+};
+
+storage hcache_storage;
+
+class init_handler : public seastar::httpd::handler_base {
+public:
+  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+      const seastar::sstring &path, std::unique_ptr<seastar::request> req,
+      std::unique_ptr<seastar::httpd::reply> rep) override {
+    rep->write_body("html", seastar::sstring("ok"));
+    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(
+        std::move(rep));
+  };
+};
+
+class query_handler : public seastar::httpd::handler_base {
+public:
+  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+      const seastar::sstring &path, std::unique_ptr<seastar::request> req,
+      std::unique_ptr<seastar::httpd::reply> rep) override {
+    auto const &key = req->param["key"];
+    folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
+    auto const &value = hcache_storage.get_value_by_key(key_string);
+    if (value.has_value()) {
+      rep->_content = std::move(seastar::sstring(value.value().c_str()));
+    }
+    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(
+        std::move(rep));
+  };
+};
+
+int main(int argc, char **argv) {
+  auto db_path = std::filesystem::path(argv[1]);
+  auto marker_path = db_path / ".loaded";
+  if (!std::filesystem::exists(marker_path)) {
+
+  }
+  rocksdb::Options options;
+  options.create_if_missing = true;
+  options.allow_mmap_reads = true;
+  options.allow_mmap_writes = true;
+  options.unordered_write = true;
+  options.use_adaptive_mutex = true;
+  rocksdb::DB *db;
+  auto status = rocksdb::DB::Open(options, argv[1], &db);
+  if (!status.ok()) {
+    applog.error("Failed to open RocksDB");
+  }
+
   seastar::app_template app;
-  httpd::http_server_control http_server;
+  seastar::httpd::http_server_control http_server;
   app.run(argc, argv, [&http_server]() -> future<> {
-    applog.info("Starting hcache server at :8080");
     return http_server.start("hcache")
         .then([&http_server] {
-          return http_server.set_routes([](seastar::httpd::routes& routes) {
-            routes.put(seastar::httpd::operation_type::GET, "/init",
-                       new seastar::httpd::function_handler(
-                           [](seastar::httpd::const_req& req,
-                              seastar::httpd::reply&) -> seastar::sstring {
-                             return "ok";
-                           },
-                           "txt"));
+          applog.info("Setting routes");
+          return http_server.set_routes([](seastar::httpd::routes &routes) {
+            routes.put(seastar::httpd::GET, "/init", new init_handler);
+            routes.add(seastar::httpd::GET,
+                       seastar::httpd::url("/query").remainder("key"),
+                       new query_handler);
           });
         })
         .then([&http_server] {
-          return http_server.listen(ipv4_addr{8080}).then([] {
-
+          applog.info("Starting hcache server at :8080");
+          return http_server.listen(seastar::ipv4_addr{8080}).then([]() {
+            return seastar::keep_doing(
+                [] { return seastar::sleep_abortable(std::chrono::hours(1)); });
           });
+        })
+        .finally([&http_server] {
+          applog.info("Aborting server");
+          return http_server.stop();
         });
   });
+  return 0;
 }

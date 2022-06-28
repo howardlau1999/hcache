@@ -2,3 +2,5 @@
 /data
 /build
 /.vscode
+/.idea
+/cmake-build-relwithdebinfo
