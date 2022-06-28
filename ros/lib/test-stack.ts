@@ -113,7 +113,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c6.xlarge",
+      defaultValue: "ecs.c7.2xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -169,6 +169,7 @@ export class TestStack extends ros.Stack {
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
       spotStrategy: 'SpotAsPriceGo',
+      spotDuration: 0,
       allocatePublicIp: true,
       internetMaxBandwidthOut: 1,
       internetChargeType: 'PayByTraffic',
