@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
+project(hcache VERSION 0.1)
 
 include(ExternalProject)
 include(ProcessorCount)
@@ -7,12 +8,11 @@ ProcessorCount(N)
 ExternalProject_Add(librocksdb_src
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/rocksdb
     URL ${CMAKE_CURRENT_LIST_DIR}/third_party/rocksdb
-    SOURCE_DIR ${librocksdb_SOURCE_DIR}
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
     BUILD_COMMAND make -j${N} static_lib
     INSTALL_COMMAND ""
-    BUILD_BYPRODUCTS "${librocksdb_SOURCE_DIR}/librocksdb.a"
+    BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/rocksdb/src/librocksdb_src/librocksdb.a"
 )
 
 ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
@@ -28,16 +28,15 @@ include_directories("${source_dir}/include")
 ExternalProject_Add(libfolly_src
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/folly
     URL ${CMAKE_CURRENT_LIST_DIR}/third_party/folly
-    SOURCE_DIR ${libfolly_SOURCE_DIR}
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND python3 ./build/fbcode_builder/getdeps.py --allow-system-packages build --scratch-path ${CMAKE_CURRENT_BINARY_DIR}/folly
+    PATCH_COMMAND ls -1 ./build/fbcode_builder/manifests/ | xargs -I {} sed -i s~https://github.com~https://ghproxy.com/https://github.com~ ./build/fbcode_builder/manifests/{}
+    BUILD_COMMAND python3 ./build/fbcode_builder/getdeps.py --allow-system-packages --scratch-path ${CMAKE_CURRENT_BINARY_DIR}/folly build folly
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
 )
 
 ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
-ExternalProject_Get_Property(librocksdb_src source_dir)
 
 add_library(libfolly STATIC IMPORTED GLOBAL)
 set_property(TARGET libfolly
@@ -50,5 +49,5 @@ find_package(ZLIB)
 add_subdirectory(third_party/seastar)
 
 add_executable(hcache src/main.cc)
-add_dependencies(hcache librocksdb_src)
-target_link_libraries(hcache Seastar::seastar librocksdb libfolly ZLIB::ZLIB)
+add_dependencies(hcache librocksdb_src libfolly_src)
+target_link_libraries(hcache Seastar::seastar librocksdb libfolly ZLIB::ZLIB zstd snappy)
