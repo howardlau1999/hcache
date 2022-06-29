@@ -1,18 +1,12 @@
-[submodule "cpp/seastar"]
+[submodule "cpp/third_party/seastar"]
 	path = cpp/third_party/seastar
-	url = https://ghproxy.com/https://github.com/scylladb/seastar
+	url = https://github.com/scylladb/seastar
 [submodule "cpp/third_party/rocksdb"]
 	path = cpp/third_party/rocksdb
-	url = https://ghproxy.com/https://github.com/facebook/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "cpp/third_party/folly"]
 	path = cpp/third_party/folly
-	url = https://ghproxy.com/https://github.com/facebook/folly
+	url = https://github.com/facebook/folly
 [submodule "cpp/third_party/rapidjson"]
 	path = cpp/third_party/rapidjson
-	url = https://ghproxy.com/https://github.com/Tencent/rapidjson
-[submodule "seastar"]
-	url = https://github.com/scylladb/seastar
-[submodule "rocksdb"]
-	url = https://github.com/facebook/rocksdb
-[submodule "rapidjson"]
 	url = https://github.com/Tencent/rapidjson
