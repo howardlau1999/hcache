@@ -10,3 +10,9 @@
 [submodule "cpp/third_party/rapidjson"]
 	path = cpp/third_party/rapidjson
 	url = https://ghproxy.com/https://github.com/Tencent/rapidjson
+[submodule "seastar"]
+	url = https://github.com/scylladb/seastar
+[submodule "rocksdb"]
+	url = https://github.com/facebook/rocksdb
+[submodule "rapidjson"]
+	url = https://github.com/Tencent/rapidjson
