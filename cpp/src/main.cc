@@ -170,11 +170,11 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    auto const &key = req->param["key"];
+    auto const &key = req->param["k"];
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     auto const &value = hcache.get_value_by_key(std::move(key_string));
     if (value.has_value()) {
-      rep->_content = std::move(seastar::sstring(value.value().c_str()));
+      rep->_content = std::move(seastar::sstring(value.value().data(), value.value().size()));
     } else {
       rep->set_status(seastar::reply::status_type::not_found);
     }
@@ -217,7 +217,7 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    auto const &key = req->param["key"];
+    auto const &key = req->param["k"];
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     hcache.del_key(std::move(key_string));
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
@@ -277,6 +277,57 @@ public:
   };
 };
 
+class zadd_handler : public seastar::httpd::handler_base {
+public:
+  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+      const seastar::sstring &path, std::unique_ptr<seastar::request> req,
+      std::unique_ptr<seastar::httpd::reply> rep) override {
+    auto const& key = req->param["key"];
+    rapidjson::Document document;
+    document.Parse(req->content.data(), req->content.size());
+    auto const score = document["score"].GetUint();
+    auto const value = document["value"].GetString();
+    if (!hcache.zset_add(folly::fbstring(key.data(), key.size()), value, score)) {
+      rep->set_status(seastar::httpd::reply::status_type::bad_request);
+    }
+    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+  };
+};
+
+class zrange_handler : public seastar::httpd::handler_base {
+public:
+  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+      const seastar::sstring &path, std::unique_ptr<seastar::request> req,
+      std::unique_ptr<seastar::httpd::reply> rep) override {
+    auto const& key = req->param["key"];
+    rapidjson::Document document;
+    document.Parse(req->content.data(), req->content.size());
+    auto const min_score = document["min_score"].GetUint();
+    auto const max_score = document["max_score"].GetUint();
+    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+  };
+};
+
+class zrmv_handler : public seastar::httpd::handler_base {
+public:
+  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+      const seastar::sstring &path, std::unique_ptr<seastar::request> req,
+      std::unique_ptr<seastar::httpd::reply> rep) override {
+    auto const& key_value = req->param["kv"];
+    auto slash_ptr = key_value.data();
+    auto end_ptr = slash_ptr + key_value.size();
+    while (slash_ptr != end_ptr) {
+      if (*(slash_ptr++) == '/') {
+        break;
+      }
+    }
+    auto const key = folly::fbstring(end_ptr, slash_ptr - key_value.data() + 1);
+    auto const value = folly::fbstring(slash_ptr + 1, end_ptr - slash_ptr);
+    hcache.zset_rmv(key, value);
+    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+  };
+};
+
 int main(int argc, char **argv) {
   if (argc >= 2) {
     auto db_path = std::filesystem::path(argv[1]);
@@ -317,12 +368,20 @@ int main(int argc, char **argv) {
         .then([&http_server] {
           applog.info("Setting routes");
           return http_server.set_routes([](seastar::httpd::routes &routes) {
+            // init
             routes.put(seastar::httpd::GET, "/init", new init_handler);
-            routes.add(seastar::httpd::GET, seastar::httpd::url("/query").remainder("key"), new query_handler);
+
+            // kv: query add batch del list
+            routes.add(seastar::httpd::GET, seastar::httpd::url("/query").remainder("k"), new query_handler);
             routes.put(seastar::httpd::POST, "/add", new add_handler);
             routes.put(seastar::httpd::POST, "/batch", new batch_handler);
-            routes.add(seastar::httpd::GET, seastar::httpd::url("/del").remainder("key"), new del_handler);
+            routes.add(seastar::httpd::GET, seastar::httpd::url("/del").remainder("k"), new del_handler);
             routes.put(seastar::httpd::POST, "/list", new list_handler);
+
+            // zset: zadd zrmv zrange
+            routes.add(seastar::httpd::POST, seastar::httpd::url("/zadd").remainder("k"), new zadd_handler);
+            routes.add(seastar::httpd::POST, seastar::httpd::url("/zrange").remainder("k"), new zrange_handler);
+            routes.add(seastar::httpd::GET, seastar::httpd::url("/zrmv").remainder("kv"), new zrmv_handler);
           });
         })
         .then([&http_server] {
