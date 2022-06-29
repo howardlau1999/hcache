@@ -34,6 +34,8 @@ net.ipv4.tcp_tw_reuse = 1
 net.core.somaxconn = 32768
 net.ipv4.tcp_max_tw_buckets = 30000
 net.ipv4.tcp_sack = 1
+kernel.perf_event_paranoid = 1
+fs.aio-max-nr = 1048576
 EOF
 
         # 自动重启脚本

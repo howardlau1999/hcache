@@ -46,8 +46,11 @@ set_property(TARGET libfolly
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/include")
 
 find_package(ZLIB)
+find_package(Boost)
+find_package(glog REQUIRED)
 add_subdirectory(third_party/seastar)
+include_directories(third_party/rapidjson/include)
 
 add_executable(hcache src/main.cc)
 add_dependencies(hcache librocksdb_src libfolly_src)
-target_link_libraries(hcache Seastar::seastar librocksdb libfolly ZLIB::ZLIB zstd snappy)
+target_link_libraries(hcache Seastar::seastar glog::glog librocksdb libfolly ZLIB::ZLIB zstd snappy Boost::boost)

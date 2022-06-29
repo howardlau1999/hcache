@@ -7,3 +7,6 @@
 [submodule "cpp/third_party/folly"]
 	path = cpp/third_party/folly
 	url = https://ghproxy.com/https://github.com/facebook/folly
+[submodule "cpp/third_party/rapidjson"]
+	path = cpp/third_party/rapidjson
+	url = https://ghproxy.com/https://github.com/Tencent/rapidjson
