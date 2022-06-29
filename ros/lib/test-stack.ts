@@ -4,12 +4,16 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 
 const startupScriptFromCleanImage = `#!/bin/bash
-        cat <<EOF > /etc/apt/sources.list
+      mv /etc/apt/sources.list /etc/apt/sources.list.bak  
+      cat <<EOF > /etc/apt/sources.list
 deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
 deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
-      apt-get update && apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update 
+      apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev &
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly &
+      wait
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
 [source.crates-io]
@@ -115,7 +119,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c7.2xlarge",
+      defaultValue: "ecs.c6.2xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
