@@ -235,32 +235,39 @@ public:
     for (auto const &key: document.GetArray()) { keys.insert(key.GetString()); }
     auto result = hcache.list_keys(keys);
     if (!result.empty()) {
-      rep->write_body("json", [result = std::move(result)](seastar::output_stream<char> &&writer) -> future<> {
+      seastar::lw_shared_ptr<bool> first = seastar::make_lw_shared<bool>(true);
+      rep->write_body("json", [result = std::move(result), first](seastar::output_stream<char> &&writer) -> future<> {
         return seastar::do_with(
-            std::move(writer), result,
-            [](seastar::output_stream<char> &body_writer, folly::fbvector<key_value> const &kvs) -> future<> {
-              return body_writer.write("[", 1).then([&body_writer, &kvs]() -> future<> {
-                bool first = true;
-                return seastar::do_for_each(
-                           kvs,
-                           [&body_writer, &first](key_value const &kv) -> future<> {
-                             const char *comma = first ? "" : ",";
-                             first = false;
-                             rapidjson::StringBuffer buffer;
-                             rapidjson::Writer<rapidjson::StringBuffer> json_writer(buffer);
-                             rapidjson::Document document(rapidjson::kObjectType);
-                             document.AddMember(
-                                 "key", rapidjson::StringRef(kv.key.data(), kv.key.size()), document.GetAllocator());
-                             document.AddMember(
-                                 "value", rapidjson::StringRef(kv.value.data(), kv.value.size()),
-                                 document.GetAllocator());
-                             document.Accept(json_writer);
-                             return body_writer.write(comma).then(
-                                 [&]() -> future<> { return body_writer.write(buffer.GetString()); });
-                           })
-                    .then([&body_writer]() -> future<> { return body_writer.write("]", 1); })
-                    .then([&]() -> future<> { return body_writer.close(); });
-              });
+            std::move(writer), result, first,
+            [](seastar::output_stream<char> &body_writer, folly::fbvector<key_value> const &kvs,
+               seastar::lw_shared_ptr<bool> first) -> future<> {
+              return seastar::do_for_each(
+                         kvs,
+                         [&body_writer, first](key_value const &kv) -> future<> {
+                           const char *prefix = *first ? "[{" : "},{";
+                           *first = false;
+                           rapidjson::StringBuffer k_buffer;
+                           rapidjson::Writer<rapidjson::StringBuffer> k_writer(k_buffer);
+                           rapidjson::Document k(rapidjson::kStringType);
+                           k.SetString(rapidjson::StringRef(kv.key.data(), kv.key.size()));
+                           k.Accept(k_writer);
+                           rapidjson::StringBuffer v_buffer;
+                           rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
+                           rapidjson::Document v(rapidjson::kStringType);
+                           v.SetString(rapidjson::StringRef(kv.value.data(), kv.value.size()));
+                           v.Accept(v_writer);
+                           return seastar::do_with(
+                               std::move(k_buffer), std::move(v_buffer),
+                               [&body_writer, prefix](auto const &k_buf, auto const &v_buf) -> future<> {
+                                 return body_writer.write(prefix)
+                                     .then([&]() -> future<> { return body_writer.write("\"key\":"); })
+                                     .then([&]() -> future<> { return body_writer.write(k_buf.GetString()); })
+                                     .then([&]() -> future<> { return body_writer.write(",\"value\":"); })
+                                     .then([&]() -> future<> { return body_writer.write(v_buf.GetString()); });
+                               });
+                         })
+                  .then([&body_writer]() -> future<> { return body_writer.write("}]"); })
+                  .then([&]() -> future<> { return body_writer.close(); });
             });
       });
     } else {
@@ -315,7 +322,6 @@ int main(int argc, char **argv) {
             routes.put(seastar::httpd::POST, "/add", new add_handler);
             routes.put(seastar::httpd::POST, "/batch", new batch_handler);
             routes.add(seastar::httpd::GET, seastar::httpd::url("/del").remainder("key"), new del_handler);
-
             routes.put(seastar::httpd::POST, "/list", new list_handler);
           });
         })
