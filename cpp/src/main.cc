@@ -170,6 +170,7 @@ public:
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
     rep->_content = "ok";
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -187,6 +188,7 @@ public:
     } else {
       rep->set_status(seastar::reply::status_type::not_found);
     }
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -201,6 +203,7 @@ public:
     auto const key = document["key"].GetString();
     auto const value = document["value"].GetString();
     hcache.add_key_value(key, value);
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -217,6 +220,7 @@ public:
       auto const value = kv["value"].GetString();
       hcache.add_key_value(key, value);
     }
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -229,6 +233,7 @@ public:
     auto const &key = req->param["k"];
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     hcache.del_key(std::move(key_string));
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -286,6 +291,7 @@ public:
     } else {
       rep->set_status(seastar::httpd::reply::status_type::not_found);
     }
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -303,6 +309,7 @@ public:
     if (!hcache.zset_add(folly::fbstring(key.data(), key.size()), value, score)) {
       rep->set_status(seastar::httpd::reply::status_type::bad_request);
     }
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -366,6 +373,7 @@ public:
     } else {
       rep->set_status(seastar::httpd::reply::status_type::not_found);
     }
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -384,6 +392,7 @@ public:
     auto const key = folly::fbstring(key_value.data(), slash_ptr - key_value.data() - 1);
     auto const value = folly::fbstring(slash_ptr, end_ptr - slash_ptr);
     hcache.zset_rmv(key, value);
+    rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
