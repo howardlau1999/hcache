@@ -34,22 +34,17 @@ struct key_value {
   folly::fbstring value;
 };
 
-struct score_value {
-  uint32_t score;
-  folly::fbstring value;
-};
-
 class zset {
 public:
   struct unit {};
   using values_set_ptr = std::shared_ptr<folly::ConcurrentHashMap<folly::fbstring, unit>>;
   struct score_values {
-    uint32_t score_{};
-    values_set_ptr values_{nullptr};
+    uint32_t score{};
+    values_set_ptr values{nullptr};
   };
 
   struct score_values_less {
-    bool operator()(const score_values &lhs, const score_values &rhs) const { return lhs.score_ < rhs.score_; }
+    bool operator()(const score_values &lhs, const score_values &rhs) const { return lhs.score < rhs.score; }
   };
 
   using csl = folly::ConcurrentSkipList<score_values, score_values_less>;
@@ -57,44 +52,53 @@ public:
   folly::ConcurrentHashMap<folly::fbstring, uint32_t> value_to_score_;
   std::shared_ptr<csl> score_to_values_;
 
-  folly::Optional<uint32_t> get_score_by_value(folly::fbstring const &value) {
+  zset() : score_to_values_(csl::createInstance()) {}
+
+  void zrmv(folly::fbstring const &value) {
     auto it = value_to_score_.find(value);
-    if (it != value_to_score_.end()) { return it->second; }
-    return folly::none;
+    if (it == value_to_score_.end()) { return; }
+    csl::Accessor accessor(score_to_values_);
+    auto old_score_it = accessor.find({it->second, nullptr});
+    if (old_score_it.good()) {
+      old_score_it->values->erase(value);
+      if (old_score_it->values->empty()) { accessor.remove({it->second, nullptr}); }
+    }
   }
 
   void zadd(folly::fbstring const &value, uint32_t score) {
     auto it = value_to_score_.find(value);
     if (it != value_to_score_.end()) {
-      // Remove from old score
       csl::Accessor accessor(score_to_values_);
-      auto old_score_it = accessor.lower_bound(score_values{it->second, nullptr});
-      old_score_it->values_->erase(value);
-      auto new_score_it = accessor.lower_bound(score_values{score, nullptr});
-      if (new_score_it != accessor.end()) {
-        new_score_it->values_->emplace(value, unit{});
-      } else {
-        auto new_values = std::make_shared<folly::ConcurrentHashMap<folly::fbstring, unit>>();
-        new_values->emplace(value, unit{});
-        accessor.insert(score_values{score, new_values});
-      }
+      // Remove from old score
+      auto old_score_it = accessor.find(score_values{it->second, nullptr});
+      old_score_it->values->erase(value);
+      if (old_score_it->values->empty()) { accessor.remove({it->second, nullptr}); }
     }
     // Update score
+    csl::Accessor accessor(score_to_values_);
+    auto new_score_it = accessor.find(score_values{score, nullptr});
+    if (new_score_it.good()) {
+      new_score_it->values->emplace(value, unit{});
+    } else {
+      auto new_values = std::make_shared<folly::ConcurrentHashMap<folly::fbstring, unit>>();
+      new_values->emplace(value, unit{});
+      accessor.insert(score_values{score, new_values});
+    }
+    value_to_score_.erase(value);
     value_to_score_.emplace(value, score);
   }
 
-  folly::fbvector<values_set_ptr> zrange(uint32_t min_score, uint32_t max_score) {
-    folly::fbvector<values_set_ptr> result;
+  folly::fbvector<score_values> zrange(uint32_t min_score, uint32_t max_score) {
+    folly::fbvector<score_values> result;
     csl::Accessor accessor(score_to_values_);
     csl::Skipper skipper(accessor);
-    if (skipper.to({min_score, nullptr})) {
-      while (skipper.good() && skipper->score_ <= max_score) {
-        result.push_back(skipper->values_);
-        ++skipper;
-      }
+    skipper.to({min_score, nullptr});
+    while (skipper.good() && skipper->score <= max_score) {
+      result.push_back(*skipper);
+      ++skipper;
     }
 
-    return {};
+    return result;
   }
 };
 
@@ -144,12 +148,17 @@ public:
   }
 
   void zset_rmv(folly::fbstring const &key, folly::fbstring const &value) {
-    auto it = kv_.find(key);
-    if (it != kv_.end()) { return; }
     auto zset_it = zsets_.find(key);
     if (zset_it == zsets_.end()) { return; }
     auto &zset = *zset_it->second;
-    zset.zadd(value, 0);
+    zset.zrmv(value);
+  }
+
+  folly::Optional<folly::fbvector<zset::score_values>>
+  zset_zrange(folly::fbstring const &key, uint32_t min_score, uint32_t max_score) {
+    auto zset_it = zsets_.find(key);
+    if (zset_it != zsets_.end()) { return zset_it->second->zrange(min_score, max_score); }
+    return folly::none;
   }
 };
 
@@ -247,15 +256,19 @@ public:
                            const char *prefix = *first ? "[{" : "},{";
                            *first = false;
                            rapidjson::StringBuffer k_buffer;
-                           rapidjson::Writer<rapidjson::StringBuffer> k_writer(k_buffer);
-                           rapidjson::Document k(rapidjson::kStringType);
-                           k.SetString(rapidjson::StringRef(kv.key.data(), kv.key.size()));
-                           k.Accept(k_writer);
                            rapidjson::StringBuffer v_buffer;
-                           rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
-                           rapidjson::Document v(rapidjson::kStringType);
-                           v.SetString(rapidjson::StringRef(kv.value.data(), kv.value.size()));
-                           v.Accept(v_writer);
+                           {
+                             rapidjson::Writer<rapidjson::StringBuffer> k_writer(k_buffer);
+                             rapidjson::Document k(rapidjson::kStringType);
+                             k.SetString(rapidjson::StringRef(kv.key.data(), kv.key.size()));
+                             k.Accept(k_writer);
+                           }
+                           {
+                             rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
+                             rapidjson::Document v(rapidjson::kStringType);
+                             v.SetString(rapidjson::StringRef(kv.value.data(), kv.value.size()));
+                             v.Accept(v_writer);
+                           }
                            return seastar::do_with(
                                std::move(k_buffer), std::move(v_buffer),
                                [&body_writer, prefix](auto const &k_buf, auto const &v_buf) -> future<> {
@@ -282,7 +295,7 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    auto const& key = req->param["key"];
+    auto const &key = req->param["k"];
     rapidjson::Document document;
     document.Parse(req->content.data(), req->content.size());
     auto const score = document["score"].GetUint();
@@ -299,11 +312,60 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    auto const& key = req->param["key"];
+    auto const &key = req->param["k"];
     rapidjson::Document document;
     document.Parse(req->content.data(), req->content.size());
     auto const min_score = document["min_score"].GetUint();
     auto const max_score = document["max_score"].GetUint();
+    auto maybe_score_values = hcache.zset_zrange(folly::fbstring(key.data(), key.size()), min_score, max_score);
+    if (maybe_score_values.has_value()) {
+      auto score_values = maybe_score_values.value();
+      if (score_values.empty()) {
+        rep->_content = "[]";
+      } else {
+        seastar::lw_shared_ptr<bool> first = seastar::make_lw_shared<bool>(true);
+        rep->write_body(
+            "json", [score_values = std::move(score_values), first](seastar::output_stream<char> &&writer) -> future<> {
+              return seastar::do_with(
+                  std::move(writer), score_values, first,
+                  [](seastar::output_stream<char> &body_writer, folly::fbvector<zset::score_values> const &svs,
+                     seastar::lw_shared_ptr<bool> first) -> future<> {
+                    return body_writer.write("[{", 2)
+                        .then([&]() -> future<> {
+                          return seastar::do_for_each(
+                              svs, [&body_writer, first](zset::score_values const &sv) -> future<> {
+                                rapidjson::Document v(rapidjson::kStringType);
+                                auto score_field = fmt::format("\"score\":{},", sv.score);
+                                for (auto it = sv.values->begin(); it != sv.values->end(); ++it) {
+                                  auto const &value = *it;
+                                  const char *prefix = *first ? "" : "},{";
+                                  *first = false;
+                                  rapidjson::StringBuffer v_buffer;
+                                  {
+                                    rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
+                                    v.SetString(rapidjson::StringRef(value.first.data(), value.first.size()));
+                                    v.Accept(v_writer);
+                                  }
+                                  seastar::do_with(std::move(v_buffer), [&](auto const &v_buf) -> future<> {
+                                    return body_writer.write(prefix)
+                                        .then([&]() -> future<> {
+                                          return body_writer.write(score_field.data(), score_field.size());
+                                        })
+                                        .then([&]() -> future<> { return body_writer.write("\"value\":"); })
+                                        .then([&]() -> future<> { return body_writer.write(v_buf.GetString()); });
+                                  }).get();
+                                }
+                                return make_ready_future<>();
+                              });
+                        })
+                        .then([&]() -> future<> { return body_writer.write("}]", 2); })
+                        .then([&]() -> future<> { return body_writer.close(); });
+                  });
+            });
+      }
+    } else {
+      rep->set_status(seastar::httpd::reply::status_type::not_found);
+    }
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
 };
@@ -313,16 +375,14 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    auto const& key_value = req->param["kv"];
+    auto const &key_value = req->param["kv"];
     auto slash_ptr = key_value.data();
     auto end_ptr = slash_ptr + key_value.size();
     while (slash_ptr != end_ptr) {
-      if (*(slash_ptr++) == '/') {
-        break;
-      }
+      if (*(slash_ptr++) == '/') { break; }
     }
-    auto const key = folly::fbstring(end_ptr, slash_ptr - key_value.data() + 1);
-    auto const value = folly::fbstring(slash_ptr + 1, end_ptr - slash_ptr);
+    auto const key = folly::fbstring(key_value.data(), slash_ptr - key_value.data() - 1);
+    auto const value = folly::fbstring(slash_ptr, end_ptr - slash_ptr);
     hcache.zset_rmv(key, value);
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
