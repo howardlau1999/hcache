@@ -359,6 +359,7 @@ public:
 
 int main(int argc, char **argv) {
   if (argc >= 2) {
+    --argc;
     auto db_path = std::filesystem::path(argv[1]);
     auto marker_path = db_path / ".loaded";
     if (!std::filesystem::exists(marker_path)) {
