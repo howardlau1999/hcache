@@ -20,7 +20,7 @@ ExternalProject_Get_Property(librocksdb_src source_dir)
 
 add_library(librocksdb STATIC IMPORTED GLOBAL)
 set_property(TARGET librocksdb
-    PROPERTY IMPORTED_LOCATION 
+    PROPERTY IMPORTED_LOCATION
     "${source_dir}/librocksdb.a"
 )
 include_directories("${source_dir}/include")
@@ -40,14 +40,14 @@ ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS
 
 add_library(libfolly STATIC IMPORTED GLOBAL)
 set_property(TARGET libfolly
-    PROPERTY IMPORTED_LOCATION 
+    PROPERTY IMPORTED_LOCATION
     "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
 )
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/include")
 
 find_package(ZLIB)
 find_package(Boost)
-find_package(glog REQUIRED)
+find_package(glog)
 add_subdirectory(third_party/seastar)
 add_subdirectory(third_party/simdjson)
 include_directories(third_party/rapidjson/include)
