@@ -3,13 +3,26 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 
-const startupScriptFromCleanImage = `#!/bin/bash
-      yum makecache --refresh
-      yum install -y curl
-      yum install -y ninja-build hwloc-devel  numactl-devel    libpciaccess-devel    cryptopp-devel  libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel    liburing-devel systemtap-sdt-devel    libtool    cmake    yaml-cpp-devel    c-ares-devel    stow    diffutils    doxygen    openssl    fmt-devel    boost-devel valgrind-devel  ragel make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log &
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log &
-      wait
-      yum autoremove -y
+const yumInstallPackages = `#!/bin/bash
+  yum makecache --refresh
+  yum install -y curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
+`
+
+const aptInstallPackages = `#!/bin/bash
+   mv /etc/apt/sources.list /etc/apt/sources.list.bak  
+      cat <<EOF > /etc/apt/sources.list
+deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
+deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
+EOF
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update 
+      apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
+      apt-get autoremove -y
+`
+
+
+const startupScriptFromCleanImage = `
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
 [source.crates-io]
@@ -59,9 +72,15 @@ EOF
       NOTIFY
       `;
 const imageAndStartScript = {
-  "debian": {
+  "alinux": {
+    startScript: `${yumInstallPackages}
+    ${startupScriptFromCleanImage}`,
     imageId: "aliyun_3_x64_20G_alibase_20220527.vhd",
-    startScript: startupScriptFromCleanImage,
+  },
+  "debian": {
+    startScript: `${aptInstallPackages}
+    ${startupScriptFromCleanImage}`,
+    imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
   },
   "custom": {
     imageId: "m-2ze6tbibqok06pny2wx3",
