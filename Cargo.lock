@@ -675,7 +675,7 @@ dependencies = [
 [[package]]
 name = "librocksdb-sys"
 version = "0.7.1+7.3.1"
-source = "git+https://ghproxy.com/https://github.com/rust-rocksdb/rust-rocksdb#701d46198b847fdd8e2429c1cdea17cca665574b"
+source = "git+https://github.com/rust-rocksdb/rust-rocksdb#653d37f3ccef1fb474cc59b04bd96a48ae1ccf2b"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -719,7 +719,7 @@ dependencies = [
 [[package]]
 name = "lockfree-cuckoohash"
 version = "0.1.0"
-source = "git+https://ghproxy.com/https://github.com/datenlord/lockfree-cuckoohash#aba9f1d2473739ee7fb09282a2753859761b4314"
+source = "git+https://github.com/datenlord/lockfree-cuckoohash#aba9f1d2473739ee7fb09282a2753859761b4314"
 dependencies = [
  "clippy-utilities",
  "crossbeam-epoch",
@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "monoio"
 version = "0.0.7"
-source = "git+https://ghproxy.com/https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "bytes",
  "fxhash",
@@ -817,7 +817,7 @@ dependencies = [
 [[package]]
 name = "monoio-compat"
 version = "0.0.7"
-source = "git+https://ghproxy.com/https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "monoio",
  "reusable-box-future",
@@ -827,7 +827,7 @@ dependencies = [
 [[package]]
 name = "monoio-macros"
 version = "0.0.3"
-source = "git+https://ghproxy.com/https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1052,7 +1052,7 @@ dependencies = [
 [[package]]
 name = "rocksdb"
 version = "0.18.0"
-source = "git+https://ghproxy.com/https://github.com/rust-rocksdb/rust-rocksdb#701d46198b847fdd8e2429c1cdea17cca665574b"
+source = "git+https://github.com/rust-rocksdb/rust-rocksdb#653d37f3ccef1fb474cc59b04bd96a48ae1ccf2b"
 dependencies = [
  "libc",
  "librocksdb-sys",

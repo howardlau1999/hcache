@@ -484,7 +484,10 @@ fn monoio_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "memory")]
 fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<String, String>) {
-    let mut iter = db.raw_iterator();
+    let mut options = rocksdb::ReadOptions::default();
+    options.set_readahead_size(128 * 1024 * 1024);
+    options.set_verify_checksums(false);
+    let mut iter = db.raw_iterator_opt(options);
     iter.seek_to_first();
     while iter.valid() {
         let key = iter.key();
@@ -510,9 +513,8 @@ fn main() {
     options.set_use_adaptive_mutex(true);
     #[cfg(feature = "memory")]
     let kv = LockFreeCuckooHash::new();
-    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path);
     #[cfg(feature = "memory")]
-    if let Ok(db) = db {
+    if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
         let marker_file_path = db_path.join(".loaded");
         if !marker_file_path.exists() {
             init_load_kv(db, &kv);
@@ -522,7 +524,7 @@ fn main() {
         }
     }
     #[cfg(not(feature = "memory"))]
-    let db = db.unwrap();
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
 
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
