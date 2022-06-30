@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-set -xe
-cd cpp/third_party/seastar && sudo ./install-dependencies.sh
-cd cpp/third_party/folly && sudo ./build/fbcode_builder/getdeps.py install-system-deps --recursive
+CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-"RelWithDebInfo"}
+BUILD_DIR=cmake-build-$(echo $CMAKE_BUILD_TYPE | tr "[:upper:]" "[:lower:]")
+cmake -DRELWITHDEBINFO_FORCE_OPTIMIZATION_O3=ON -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -GNinja -B$BUILD_DIR .
+cmake --build $BUILD_DIR

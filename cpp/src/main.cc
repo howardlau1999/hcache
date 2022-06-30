@@ -251,45 +251,21 @@ public:
     for (auto const &key: parser.parse(json)) { keys.insert(key.get_string().take_value()); }
     auto result = hcache.list_keys(keys);
     if (!result.empty()) {
-      seastar::lw_shared_ptr<bool> first = seastar::make_lw_shared<bool>(true);
-      rep->write_body("json", [result = std::move(result), first](seastar::output_stream<char> &&writer) -> future<> {
-        return seastar::do_with(
-            std::move(writer), result, first,
-            [](seastar::output_stream<char> &body_writer, folly::fbvector<key_value> const &kvs,
-               seastar::lw_shared_ptr<bool> first) -> future<> {
-              return seastar::do_for_each(
-                         kvs,
-                         [&body_writer, first](key_value const &kv) -> future<> {
-                           const char *prefix = *first ? "[{" : "},{";
-                           *first = false;
-                           rapidjson::StringBuffer k_buffer;
-                           rapidjson::StringBuffer v_buffer;
-                           {
-                             rapidjson::Writer<rapidjson::StringBuffer> k_writer(k_buffer);
-                             rapidjson::Document k(rapidjson::kStringType);
-                             k.SetString(rapidjson::StringRef(kv.key.data(), kv.key.size()));
-                             k.Accept(k_writer);
-                           }
-                           {
-                             rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
-                             rapidjson::Document v(rapidjson::kStringType);
-                             v.SetString(rapidjson::StringRef(kv.value.data(), kv.value.size()));
-                             v.Accept(v_writer);
-                           }
-                           return seastar::do_with(
-                               std::move(k_buffer), std::move(v_buffer),
-                               [&body_writer, prefix](auto const &k_buf, auto const &v_buf) -> future<> {
-                                 return body_writer.write(prefix)
-                                     .then([&]() -> future<> { return body_writer.write("\"key\":"); })
-                                     .then([&]() -> future<> { return body_writer.write(k_buf.GetString()); })
-                                     .then([&]() -> future<> { return body_writer.write(",\"value\":"); })
-                                     .then([&]() -> future<> { return body_writer.write(v_buf.GetString()); });
-                               });
-                         })
-                  .then([&body_writer]() -> future<> { return body_writer.write("}]"); })
-                  .then([&]() -> future<> { return body_writer.close(); });
-            });
-      });
+      auto d = rapidjson::Document();
+      auto &kv_list = d.SetArray();
+      auto &allocator = d.GetAllocator();
+      for (auto const &kv: result) {
+        auto &&kv_object = rapidjson::Value(rapidjson::kObjectType);
+        auto &&k_string = rapidjson::StringRef(kv.key.data(), kv.key.size());
+        auto &&v_string = rapidjson::StringRef(kv.value.data(), kv.value.size());
+        kv_object.AddMember("key", k_string, allocator);
+        kv_object.AddMember("value", v_string, allocator);
+        kv_list.PushBack(kv_object, allocator);
+      }
+      rapidjson::StringBuffer buffer;
+      rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+      d.Accept(writer);
+      rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
     } else {
       rep->set_status(seastar::httpd::reply::status_type::not_found);
     }
@@ -334,45 +310,25 @@ public:
       if (score_values.empty()) {
         rep->_content = "[]";
       } else {
-        seastar::lw_shared_ptr<bool> first = seastar::make_lw_shared<bool>(true);
-        rep->write_body(
-            "json", [score_values = std::move(score_values), first](seastar::output_stream<char> &&writer) -> future<> {
-              return seastar::do_with(
-                  std::move(writer), score_values, first,
-                  [](seastar::output_stream<char> &body_writer, folly::fbvector<zset::score_values> const &svs,
-                     seastar::lw_shared_ptr<bool> first) -> future<> {
-                    return body_writer.write("[{", 2)
-                        .then([&]() -> future<> {
-                          return seastar::do_for_each(
-                              svs, [&body_writer, first](zset::score_values const &sv) -> future<> {
-                                rapidjson::Document v(rapidjson::kStringType);
-                                auto score_field = fmt::format("\"score\":{},", sv.score);
-                                for (auto it = sv.values->begin(); it != sv.values->end(); ++it) {
-                                  auto const &value = *it;
-                                  const char *prefix = *first ? "" : "},{";
-                                  *first = false;
-                                  rapidjson::StringBuffer v_buffer;
-                                  {
-                                    rapidjson::Writer<rapidjson::StringBuffer> v_writer(v_buffer);
-                                    v.SetString(rapidjson::StringRef(value.first.data(), value.first.size()));
-                                    v.Accept(v_writer);
-                                  }
-                                  seastar::do_with(std::move(v_buffer), [&](auto const &v_buf) -> future<> {
-                                    return body_writer.write(prefix)
-                                        .then([&]() -> future<> {
-                                          return body_writer.write(score_field.data(), score_field.size());
-                                        })
-                                        .then([&]() -> future<> { return body_writer.write("\"value\":"); })
-                                        .then([&]() -> future<> { return body_writer.write(v_buf.GetString()); });
-                                  }).get();
-                                }
-                                return make_ready_future<>();
-                              });
-                        })
-                        .then([&]() -> future<> { return body_writer.write("}]", 2); })
-                        .then([&]() -> future<> { return body_writer.close(); });
-                  });
-            });
+        auto d = rapidjson::Document();
+        auto &sv_list = d.SetArray();
+        auto &allocator = d.GetAllocator();
+        for (auto const &sv: score_values) {
+          auto values_ptr = sv.values;
+          for (auto it = values_ptr->cbegin(); it != values_ptr->cend(); ++it) {
+            auto &&sv_object = rapidjson::Value(rapidjson::kObjectType);
+            auto &&s_value = rapidjson::Value();
+            s_value.SetUint(sv.score);
+            auto &&v_string = rapidjson::StringRef(it->first.data(), it->first.size());
+            sv_object.AddMember("score", s_value, allocator);
+            sv_object.AddMember("value", v_string, allocator);
+            sv_list.PushBack(sv_object, allocator);
+          }
+        }
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        d.Accept(writer);
+      	rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
       }
     } else {
       rep->set_status(seastar::httpd::reply::status_type::not_found);
