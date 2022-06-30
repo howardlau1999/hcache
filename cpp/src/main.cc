@@ -375,7 +375,7 @@ int main(int argc, char **argv) {
         applog.error("Failed to open RocksDB");
       } else {
         rocksdb::ReadOptions read_options;
-        read_options.adaptive_readahead = true;
+        read_options.readahead_size = 128 * 1024 * 1024;
         read_options.async_io = true;
         read_options.verify_checksums = false;
         auto iter = db->NewIterator(read_options);
