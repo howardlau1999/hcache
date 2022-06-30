@@ -6,7 +6,7 @@ import { readFileSync } from 'fs';
 const startupScriptFromCleanImage = `#!/bin/bash
       yum makecache --refresh
       yum install -y curl
-      yum install -y make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log &
+      yum install -y ninja-build hwloc-devel  numactl-devel    libpciaccess-devel    cryptopp-devel  libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel    liburing-devel systemtap-sdt-devel    libtool    cmake    yaml-cpp-devel    c-ares-devel    stow    diffutils    doxygen    openssl    fmt-devel    boost-devel valgrind-devel  ragel make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log &
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log &
       wait
       yum autoremove -y
