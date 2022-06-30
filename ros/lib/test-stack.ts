@@ -4,16 +4,12 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 
 const startupScriptFromCleanImage = `#!/bin/bash
-      mv /etc/apt/sources.list /etc/apt/sources.list.bak  
-      cat <<EOF > /etc/apt/sources.list
-deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
-deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
-EOF
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update 
-      apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev &
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly &
+      yum makecache --refresh
+      yum install -y curl
+      yum install -y make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log &
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log &
       wait
+      yum autoremove -y
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
 [source.crates-io]
@@ -64,7 +60,7 @@ EOF
       `;
 const imageAndStartScript = {
   "debian": {
-    imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
+    imageId: "aliyun_3_x64_20G_alibase_20220527.vhd",
     startScript: startupScriptFromCleanImage,
   },
   "custom": {
@@ -119,7 +115,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c6.2xlarge",
+      defaultValue: "ecs.c7.2xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -127,7 +123,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_efficiency",
+      defaultValue: "cloud_essd",
     });
 
     // 创建安全组开放端口
@@ -158,7 +154,7 @@ export class TestStack extends ros.Stack {
     });
 
     const ecsWaitCondition = new ROS.WaitCondition(this, 'RosWaitCondition', {
-      timeout: 1200,
+      timeout: 600,
       handle: ros.Fn.ref('RosWaitConditionHandle'),
       count: 1
     });

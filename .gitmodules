@@ -10,3 +10,6 @@
 [submodule "cpp/third_party/rapidjson"]
 	path = cpp/third_party/rapidjson
 	url = https://github.com/Tencent/rapidjson
+[submodule "cpp/third_party/simdjson"]
+	path = cpp/third_party/simdjson
+	url = https://github.com/simdjson/simdjson

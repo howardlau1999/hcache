@@ -4,12 +4,12 @@ function close_tunnel() {
 }
 set -e
 BRANCH=${1:-"master"}
-LOCAL_PROXY=${HTTPS_PROXY:-"192.168.237.1:10080"}
+LOCAL_PROXY=${LOCAL_PROXY:-"192.168.237.1:10080"}
 echo -n "GitHub Username: "
 read USERNAME
 echo -n "GitHub Password: "
 read PASSWORD
-URL="https://${USERNAME}:${PASSWORD}@ghproxy.com/https://github.com/howardlau1999/hcache"
+URL="https://${USERNAME}:${PASSWORD}@github.com/howardlau1999/hcache"
 SOCKET_PATTERN="$HOME/.ssh/controlmasters/%r@%h:%p"
 mkdir -p ~/.ssh/controlmasters
 ./connect-ecs.sh -M -S $SOCKET_PATTERN -R "10080:$LOCAL_PROXY" -N -f
@@ -21,4 +21,4 @@ else \
 git clone --recursive $URL && cd hcache && git checkout $BRANCH ;\
 fi"
 ./connect-ecs.sh "rm -rf /data && mkdir -p /data"
-./connect-ecs.sh "export HTTPS_PROXY=http://localhost:10080; cd hcache && cargo build --release && cargo build"
+./connect-ecs.sh "export HTTPS_PROXY=http://localhost:10080; export NO_PROXY=*.tsinghua.edu.cn; cd hcache && cargo build --release"

@@ -79,7 +79,6 @@ export class SubmissionStack extends ros.Stack {
         { "ros-notify": ecsWaitConditionHandle.attrCurlCli },
         `#!/bin/bash
         export nas_url=${nasUrl.valueAsString}
-        sudo apt-get install -y nfs-common
         sudo mkdir /data2
         sudo mount -t nfs -o vers=3,nolock,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport "\${nas_url}" /data2
         cp /data2/* /data/

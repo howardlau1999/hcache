@@ -8,6 +8,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/writer.h>
 #include <rocksdb/db.h>
+#include <simdjson.h>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/intrusive/hashtable.hpp>
@@ -198,11 +199,12 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    rapidjson::Document document;
-    document.Parse(req->content.data(), req->content.size());
-    auto const key = document["key"].GetString();
-    auto const value = document["value"].GetString();
-    hcache.add_key_value(key, value);
+    simdjson::dom::parser parser;
+    simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
+    auto document = parser.parse(json);
+    auto const key = document["key"].get_string().take_value();
+    auto const value = document["value"].get_string().take_value();
+    hcache.add_key_value(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()));
     rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
   };
@@ -213,12 +215,12 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    rapidjson::Document document;
-    document.Parse(req->content.data(), req->content.size());
-    for (auto const &kv: document.GetArray()) {
-      auto const key = kv["key"].GetString();
-      auto const value = kv["value"].GetString();
-      hcache.add_key_value(key, value);
+    simdjson::dom::parser parser;
+    simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
+    for (auto const &kv: parser.parse(json)) {
+      auto const key = kv["key"].get_string().take_value();
+      auto const value = kv["value"].get_string().take_value();
+      hcache.add_key_value(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()));
     }
     rep->done();
     return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
@@ -243,10 +245,10 @@ public:
   virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
-    rapidjson::Document document;
-    document.Parse(req->content.data(), req->content.size());
+    simdjson::dom::parser parser;
+    simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
     folly::F14FastSet<folly::StringPiece> keys;
-    for (auto const &key: document.GetArray()) { keys.insert(key.GetString()); }
+    for (auto const &key: parser.parse(json)) { keys.insert(key.get_string().take_value()); }
     auto result = hcache.list_keys(keys);
     if (!result.empty()) {
       seastar::lw_shared_ptr<bool> first = seastar::make_lw_shared<bool>(true);
@@ -302,11 +304,12 @@ public:
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
     auto const &key = req->param["k"];
-    rapidjson::Document document;
-    document.Parse(req->content.data(), req->content.size());
-    auto const score = document["score"].GetUint();
-    auto const value = document["value"].GetString();
-    if (!hcache.zset_add(folly::fbstring(key.data(), key.size()), value, score)) {
+    simdjson::dom::parser parser;
+    simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
+    auto document = parser.parse(json);
+    auto const score = document["score"].get_uint64().take_value();
+    auto const value = document["value"].get_string().take_value();
+    if (!hcache.zset_add(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()), score)) {
       rep->set_status(seastar::httpd::reply::status_type::bad_request);
     }
     rep->done();
@@ -320,10 +323,11 @@ public:
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
       std::unique_ptr<seastar::httpd::reply> rep) override {
     auto const &key = req->param["k"];
-    rapidjson::Document document;
-    document.Parse(req->content.data(), req->content.size());
-    auto const min_score = document["min_score"].GetUint();
-    auto const max_score = document["max_score"].GetUint();
+    simdjson::dom::parser parser;
+    simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
+    auto document = parser.parse(json);
+    auto const min_score = document["min_score"].get_uint64().take_value();
+    auto const max_score = document["max_score"].get_uint64().take_value();
     auto maybe_score_values = hcache.zset_zrange(folly::fbstring(key.data(), key.size()), min_score, max_score);
     if (maybe_score_values.has_value()) {
       auto score_values = maybe_score_values.value();
