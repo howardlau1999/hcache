@@ -59,7 +59,7 @@ EOF
 #!/bin/bash
 ulimit -n 1000000
 while true; do
-  ~/hcache/target/release/hcache /data
+  /usr/bin/hcache /data
 done
 EOF
         # 启动脚本
