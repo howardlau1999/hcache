@@ -17,7 +17,7 @@ deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
-      apt-get install -y build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
+      apt-get install -y libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
       apt-get autoremove -y
 `
 
