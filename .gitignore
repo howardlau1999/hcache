@@ -1,4 +1,5 @@
-/target
+rust/target
+client/target
 /data
 /build
 /.vscode
