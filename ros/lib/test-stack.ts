@@ -2,6 +2,7 @@ import * as ros from '@alicloud/ros-cdk-core';
 import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
+import { hostname } from 'os';
 
 const yumInstallPackages = `#!/bin/bash
   yum makecache --refresh
@@ -31,6 +32,8 @@ replace-with = 'tuna'
 [source.tuna]
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
+      # Update crates.io index in background
+      cd /tmp && cargo install lazy_static &
       cat <<EOF | sudo tee -a /etc/security/limits.conf 
 * hard memlock unlimited
 * soft memlock unlimited
@@ -162,9 +165,9 @@ export class TestStack extends ros.Stack {
     // 密钥导入，默认读取本地的公钥
     const pubKey = readFileSync(`${process.env.HOME}/.ssh/id_rsa.pub`).toString();
     const keyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
-      keyPairName: `hcache-key-pair-${process.env.HOSTNAME}`,
+      keyPairName: `hcache-key-pair-${hostname()}`,
       publicKeyBody: pubKey,
-      tags: [{ key: 'hcache', value: process.env.HOSTNAME }],
+      tags: [{ key: 'hcache', value: hostname() }],
     });
 
     // 等待逻辑，用于等待 ECS 中应用安装完成
