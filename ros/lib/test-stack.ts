@@ -60,7 +60,7 @@ EOF
 ulimit -n 1000000
 export INIT_DIR=/data
 while true; do
-  /usr/bin/hcache
+  /usr/bin/hcache --reactor-backend io_uring
 done
 EOF
         # 启动脚本

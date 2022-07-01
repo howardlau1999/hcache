@@ -5,7 +5,7 @@ echo "Wait for ECS to stop..."
 while true; do
     export INSTANCE_OBJECT=$(aliyun ecs DescribeInstances --InstanceIds="[\"${INSTANCE_ID}\"]")
     export INSTANCE_STATUS=$(echo "$INSTANCE_OBJECT" | jq -r '.Instances.Instance[0].Status')
-    if [ "$IMAGE_STATUS" = "Stopped" ]; then
+    if [ "$INSTANCE_STATUS" = "Stopped" ]; then
 	    break
     fi
     echo "$(date --rfc-3339='seconds') - $INSTANCE_ID - $INSTANCE_STATUS"
