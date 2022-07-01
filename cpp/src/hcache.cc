@@ -317,10 +317,8 @@ public:
           auto values_ptr = sv.values;
           for (auto it = values_ptr->cbegin(); it != values_ptr->cend(); ++it) {
             auto &&sv_object = rapidjson::Value(rapidjson::kObjectType);
-            auto &&s_value = rapidjson::Value();
-            s_value.SetUint(sv.score);
-            auto &&v_string = rapidjson::StringRef(it->first.data(), it->first.size());
-            sv_object.AddMember("score", s_value, allocator);
+            auto &&v_string = rapidjson::Value(it->first.data(), it->first.size(), allocator);
+            sv_object.AddMember("score", sv.score, allocator);
             sv_object.AddMember("value", v_string, allocator);
             sv_list.PushBack(sv_object, allocator);
           }
