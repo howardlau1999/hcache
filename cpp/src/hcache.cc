@@ -370,7 +370,7 @@ int main(int argc, char **argv) {
       options.unordered_write = true;
       options.use_adaptive_mutex = true;
       rocksdb::DB *db;
-      auto status = rocksdb::DB::Open(options, argv[1], &db);
+      auto status = rocksdb::DB::Open(options, db_path, &db);
       if (!status.ok()) {
         applog.error("Failed to open RocksDB");
       } else {
