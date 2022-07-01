@@ -58,8 +58,9 @@ EOF
         cat <<EOF > ~/auto-restart.sh
 #!/bin/bash
 ulimit -n 1000000
+export INIT_DIR=/data
 while true; do
-  /usr/bin/hcache /data
+  /usr/bin/hcache
 done
 EOF
         # 启动脚本

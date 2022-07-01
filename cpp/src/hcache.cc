@@ -358,9 +358,9 @@ public:
 };
 
 int main(int argc, char **argv) {
-  if (argc >= 2) {
-    --argc;
-    auto db_path = std::filesystem::path(argv[1]);
+  auto init_dir_ptr = std::getenv("INIT_DIR");
+  if (init_dir_ptr) {
+    auto db_path = std::filesystem::path(init_dir_ptr);
     auto marker_path = db_path / ".loaded";
     if (!std::filesystem::exists(marker_path)) {
       rocksdb::Options options;

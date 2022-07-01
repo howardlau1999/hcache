@@ -471,8 +471,12 @@ fn monoio_run(storage: Arc<Storage>) {
                 .build()
                 .unwrap();
             println!("Running http server on 0.0.0.0:8080");
-            rt.block_on(monoio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
-                .unwrap();
+            rt.block_on(monoio_hyper::serve_http(
+                ([0, 0, 0, 0], 8080),
+                hyper_handler,
+                storage,
+            ))
+            .unwrap();
             println!("Http server stopped");
         });
         threads.push(thread);
@@ -503,26 +507,29 @@ fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<Str
 }
 
 fn main() {
-    let args = std::env::args().collect::<Vec<_>>();
-    let db_path = Path::new(&args[1]);
-    let mut options = Options::default();
-    options.create_if_missing(true);
-    options.set_allow_mmap_reads(true);
-    options.set_allow_mmap_writes(true);
-    options.set_unordered_write(true);
-    options.set_use_adaptive_mutex(true);
     #[cfg(feature = "memory")]
     let kv = LockFreeCuckooHash::new();
-    #[cfg(feature = "memory")]
-    if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
-        let marker_file_path = db_path.join(".loaded");
-        if !marker_file_path.exists() {
-            init_load_kv(db, &kv);
-            if let Err(_) = std::fs::write(marker_file_path, "") {
-                println!("Failed to write marker file");
+    if let Ok(init_path) = std::env::var("INIT_DIR") {
+        let db_path = Path::new(&init_path);
+        let mut options = Options::default();
+        options.create_if_missing(true);
+        options.set_allow_mmap_reads(true);
+        options.set_allow_mmap_writes(true);
+        options.set_unordered_write(true);
+        options.set_use_adaptive_mutex(true);
+        #[cfg(feature = "memory")]
+        if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
+            let marker_file_path = db_path.join(".loaded");
+            if !marker_file_path.exists() {
+                init_load_kv(db, &kv);
+                if let Err(_) = std::fs::write(marker_file_path, "") {
+                    println!("Failed to write marker file");
+                }
             }
         }
     }
+    #[cfg(not(feature = "memory"))]
+    let db_path = Path::new(std::env::var("INIT_DIR").unwrap());
     #[cfg(not(feature = "memory"))]
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
 
