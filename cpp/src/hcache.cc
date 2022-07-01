@@ -384,7 +384,9 @@ int main(int argc, char **argv) {
           hcache.add_key_value(folly::fbstring(key.ToString()), folly::fbstring(value.ToString()));
           iter->Next();
         }
+        delete iter;
         std::ofstream _marker(marker_path);
+        db->Close();
       }
     }
   }
