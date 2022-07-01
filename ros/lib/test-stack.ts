@@ -69,8 +69,8 @@ EOF
 export THREAD_COUNT=\\$(nproc)
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
-      ls -s /usr/bin/ccache /usr/local/bin/gcc
-      ls -s /usr/bin/ccache /usr/local/bin/g++
+      ln -s /usr/bin/ccache /usr/local/bin/gcc
+      ln -s /usr/bin/ccache /usr/local/bin/g++
       chmod +x ~/start.sh
       chmod +x ~/auto-restart.sh
       sysctl -p
