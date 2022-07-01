@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-set -ex
+set -e
 source ./stop-ecs.sh
 echo "Wait for ECS to stop..."
-sleep 15
+while true; do
+    export INSTANCE_OBJECT=$(aliyun ecs DescribeInstances --InstanceIds="[\"${INSTANCE_ID}\"]")
+    export INSTANCE_STATUS=$(echo "$INSTANCE_OBJECT" | jq -r '.Instances.Instance[0].Status')
+    if [ "$IMAGE_STATUS" = "Stopped" ]; then
+	    break
+    fi
+    echo "$(date --rfc-3339='seconds') - $INSTANCE_ID - $INSTANCE_STATUS"
+    sleep 3
+done
 export TS="$(date --rfc-3339='seconds' | tr ' +' '_')"
 export GIT_LOG="$(git log --format='%D %h %s' -n 1)"
 export UNIX_TS="$(date +%s)"
