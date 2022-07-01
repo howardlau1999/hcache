@@ -110,17 +110,17 @@ export class BenchmarkStack extends ros.Stack {
 
     // 创建虚拟网络
     // 构建 VPC
-    const vpc = new ecs.Vpc(this, 'hcache-vpc', {
-      vpcName: 'hcache-vpc',
+    const vpc = new ecs.Vpc(this, 'hcache-bench-vpc', {
+      vpcName: 'hcache-bench-vpc',
       cidrBlock: '192.168.0.0/16',
-      description: 'hcache vpc'
+      description: 'hcache benchmark vpc'
     });
 
     // 构建 VSwitch
-    const vswitch = new ecs.VSwitch(this, 'hcache-vswitch', {
+    const vswitch = new ecs.VSwitch(this, 'hcache-bench-vswitch', {
       vpcId: vpc.attrVpcId,
       zoneId: zoneId,
-      vSwitchName: 'hcache-vswitch',
+      vSwitchName: 'hcache-bench-vswitch',
       cidrBlock: '192.168.233.0/24',
     });
 
@@ -205,7 +205,7 @@ export class BenchmarkStack extends ros.Stack {
       vSwitchId: vswitch.attrVSwitchId,
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
-      instanceType: 'ecs.g7.large',
+      instanceType: 'ecs.g7.xlarge',
       instanceName: 'hcache-benchmark-server',
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
