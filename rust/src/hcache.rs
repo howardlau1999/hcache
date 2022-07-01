@@ -451,7 +451,7 @@ fn glommio_run(storage: Arc<Storage>) {
     .on_all_shards(|| async move {
         let id = glommio::executor().id();
         println!("Starting executor {}", id);
-        glommio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, 1024, storage)
+        glommio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, 996996, storage)
             .await
             .unwrap();
     })
