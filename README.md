@@ -44,17 +44,21 @@
 
 `ros` 文件夹是阿里云相关的操作脚本，具体使用方法：
 
-首先是 `lib` 里面写好了两个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。
+首先是 `lib` 里面写好了几个 Stack，`SubmissionStack` 用来生成提交文件的，`TestStack` 是我们自己部署一台开发机器用来测试和准备镜像的（需要配置好阿里云的 API Key，余额大于 100 人民币）。`BenchmarkStack` 是部署两台独立的服务器，一台作为客户端，另一台则是和评测使用的实例规格一样的服务端。客户端有公网 IP，可以 SSH 连接上去操作，服务端没有公网 IP，需要在客户端使用私有 IP 访问。
 
-运行 `create-test-ecs.sh` 之后会部署开发资源，并且等待资源就绪之后会自动 SSH，使用本地的密钥对，没有的话先 `ssh-keygen` 一个。默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。
+运行 `create-test-ecs.sh` 之后会部署开发 `TestStack` 资源，并且等待服务器把软件包安装好。脚本需要上传本地的公钥 `~/.ssh/id_rsa.pub`，没有的话先 `ssh-keygen` 一个。默认已经装好 Rust 开发环境，但是需要手动克隆代码仓库。创建完成之后，可以使用 `connect-ecs.sh` SSH 连接上去，后面接命令的话就是在远程直接执行命令。
 
-运行 `remote-build.sh` 会自动 SSH 上去拉最新的代码并且编译。在 ECS 编译完成并且测试过之后，可以运行 `pack-image.sh` 关机并打包镜像。因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。
+运行 `./upload-to-ecs.sh $LOCAL_PATH $REMOTE_PATH` 可以将本地的文件上传上去，这样就不用再在远程服务器编译一次，但需要确保二进制能够正常启动。目前启动脚本写的是启动 `/usr/bin/hcache`。
 
-之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 文件，并且复制一份到 `latest.zip` 避免搞混，提交这个 zip 文件就行了，不需要手动修改 JSON 文件。
+也可以运行 `remote-clone.sh` 会自动 SSH 上去拉最新的代码然后用 `remote-build-{cpp,rust}.sh` 编译。如果网络连接不通，特别是从 GitHub 拉代码的时候，可以有两种方法解决，一种是自己把 clash 上传上去，然后启动代理之后，在运行上面的脚本的时候传入 `REMOTE_HTTPS_PROXY` 为在远程服务器的代理地址。也可以设置好 `LOCAL_PROXY` 为自己本机上代理的 IP 和端口之后，用 `tunnel-remote-clone.sh` 和 `tunnel-remote-build-{cpp,rust}.sh`，利用 SSH 隧道将流量转发到本机的代理进行相应操作，如果你本地的上下行带宽比较小就不推荐用这个办法了。
+
+确定程序可以正常启动，并且用 client 测试过没有问题之后，运行 `pack-image.sh` 关机并打包镜像。因为操作都是异步的，所以有可能操作失败。如果提示实例状态不对的话，等久一点等到实例状态变为 `STOPPED` 后再运行 `pack-image.sh`。
+
+之后会轮询 Image 状态，打包好了会输出 "Image created"，并且最新的镜像信息会保存在 `image.latest.json` 里。这时候可以用 `zip-submission.sh` 打包一个和 Image ID 一样的 zip 提交文件，并且复制一份到 `latest.zip` 避免搞混，提交这个 zip 文件就行了，不需要手动修改 JSON 文件。
 
 等出分的时候，可以用 `start-ecs.sh` 重新开机调试，也可以直接运行 `destroy-test-ecs.sh` 删掉所有云服务资源。如果不删掉的话，即使是关机也是要收费的。
 
-等出分之后记得运行 `delete-image.sh` 删掉镜像，不然也是要扣钱的（出分前别删）。所有删除操作都需要确认。
+等出分之后记得运行 `delete-image.sh` 删掉镜像，不然也是要扣钱的（出分前别删）。所有删除操作都需要输入 `Y` 确认。最后，可以删除所有 `zip` 文件避免后面提交错文件。另外 `delete-image.sh` 只会删除最新的镜像，如果想删除所有镜像，自己去 Web 操作或者调阿里云 API。
 
 ## Change Log
 

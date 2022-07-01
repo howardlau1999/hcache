@@ -18,3 +18,4 @@ image.latest.json
 application.ros.json
 
 *.zip
+.md5

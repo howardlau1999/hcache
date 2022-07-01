@@ -58,7 +58,7 @@ export class BenchmarkStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c7.2xlarge",
+      defaultValue: "ecs.c7.xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -85,8 +85,8 @@ export class BenchmarkStack extends ros.Stack {
 
     // 密钥导入，默认读取本地的公钥
     const pubKey = readFileSync(`${process.env.HOME}/.ssh/id_rsa.pub`).toString();
-    const keyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
-      keyPairName: `hcache-key-pair-${hostname()}`,
+    const keyPair = new ecs.SSHKeyPair(this, 'hcache-benchmark-key-pair', {
+      keyPairName: `hcache-benchmark-key-pair-${hostname()}`,
       publicKeyBody: pubKey,
       tags: [{ key: 'hcache', value: hostname() }],
     });
@@ -135,7 +135,11 @@ export class BenchmarkStack extends ros.Stack {
       allocatePublicIp: false,
       internetMaxBandwidthOut: 0,
       internetChargeType: 'PayByTraffic',
-      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, specStartScript),
+      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, `
+      #!/bin/bash
+      cd ~ && bash start.sh
+      NOTIFY
+      `),
     });
 
     new ros.RosOutput(this, 'instance_id', { value: clientInstance.attrInstanceId });
