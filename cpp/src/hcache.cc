@@ -387,6 +387,7 @@ int main(int argc, char **argv) {
         delete iter;
         std::ofstream _marker(marker_path);
         db->Close();
+        delete db;
       }
     }
   }
