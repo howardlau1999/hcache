@@ -6,7 +6,7 @@ import { hostname } from 'os';
 
 const yumInstallPackages = `#!/bin/bash
   yum makecache --refresh
-  yum install -y curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
+  yum install -y ccache curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
 `
 
 const aptInstallPackages = `#!/bin/bash
@@ -17,7 +17,7 @@ deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
-      apt-get install -y libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
+      apt-get install -y ccache libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
       apt-get autoremove -y
 `
 
@@ -68,7 +68,8 @@ EOF
 export THREAD_COUNT=\\$(nproc)
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
-
+      ls -s /usr/bin/ccache /usr/local/bin/gcc
+      ls -s /usr/bin/ccache /usr/local/bin/g++
       chmod +x ~/start.sh
       chmod +x ~/auto-restart.sh
       sysctl -p
