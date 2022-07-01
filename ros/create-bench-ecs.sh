@@ -11,5 +11,7 @@ ros-cdk deploy $STACK_NAME --sync=true --outputs-file=true
 source ./get-ecs-ip.sh
 export INSTANCE_ID=$(jq -r ".$STACK_NAME | map(select(.OutputKey == \"instance_id\"))[0].OutputValue?" stack.outputs.json)
 echo "INSTANCE_ID=$INSTANCE_ID"
+export HCACHE_IP=$(jq -r ".$STACK_NAME | map(select(.OutputKey == \"hcache_ip\"))[0].OutputValue?" stack.outputs.json)
 aliyun ecs ModifyInstanceVncPasswd --InstanceId=$INSTANCE_ID --VncPassword=Hca123
 ssh-keygen -f "~/.ssh/known_hosts" -R "$ECS_IP" || true
+echo "export HCACHE_HOST=http://$HCACHE_IP"
