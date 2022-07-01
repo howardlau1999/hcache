@@ -4,7 +4,12 @@
 
 ## 要点
 
-- 计分公式：$\mathrm{score} = \max\\{\frac{10}{T}, 10\\}+10n+(\frac{50k\cdot\mathrm{qps}}{10000})+500n+\frac{50m}{\mathrm{time\\_ delay}}$，其中，$T$ 为加载完成的时间，$n$ 为评测的接口个数（正确性），$k$ 是需要进行评测 QPS 的接口个数（接口性能），$m$ 是需要评测的延时接口个数（接口延迟）。
+- 计分公式：$\mathrm{score} = \max\\{\frac{10}{T}, 10\\}+10n+(\frac{50k\cdot\mathrm{qps}}{10000})+500n+\frac{50m}{\mathrm{time\\_ delay}}$
+  - $T$ 为加载完成的时间（只在第一次启动的时候计时，后续重启不计）
+  - $n$ 为评测的接口个数（正确性）
+  - $k$ 是需要进行评测 QPS 的接口个数（接口性能）
+  - $m$ 是需要评测延迟的接口个数
+  - $\mathrm{time}\\_ \mathrm{delay}$ 是接口的平均延迟
 - 重要性：QPS > 延迟 = 正确性 >> 初始化速度
 - 最终只需要提交一个包含 ECS 镜像 ID 的 JSON 的压缩包（已经写好脚本生成），也就是虚拟机镜像，只要能在 8080 端口提供 HTTP 服务就行
 - **每天只能提交 3 次**，尽量交满，但是不要乱交，**出错也会扣次数**
@@ -53,7 +58,8 @@
 
 ## Change Log
 
-- **2022.06.30(howard)**: C++ 部分 JSON 解析库改成 simdjson。系统镜像方面将基础镜像改成 AliLinux，Rust 初始化读 KV 的时候不校验 Checksum，使用 RawIterator 并开启迭代器的 ReadAhead，提交了一次。score:16736.6896, init_score:10.0000, api_score:630.0000, qps_score:13360.3260, delay_score:2736.3636，看起来初始化优化有用，但延迟和 QPS 可能是评测系统有一些抖动，没有之前提交的好。
+- **2022.07.01(howard)**: 发现 glommio 卡死不是库的锅，而是 Linux 内核锅，改成用内网 IP 访问就能正常压测了。但是评测机好像不支持 io-uring，用 Rust 和 C++ 写的都出不了分，原因不明。把 tokio 的重新交了一次，分变高了，score:17243.5115, init_score:5.0000, api_score:630.0000, qps_score:13336.7723, delay_score:3271.7391
+- **2022.06.30(howard)**: C++ 部分 JSON 解析库改成 simdjson。系统镜像方面将基础镜像改成 AliLinux，Rust 初始化读 KV 的时候不校验 Checksum，使用 RawIterator 并开启迭代器的 ReadAhead，提交了一次。score:16736.6896, init_score:10.0000, api_score:630.0000, qps_score:13360.3260, delay_score:2736.3636，看起来初始化优化有用，但延迟和 QPS 可能是评测系统有一些抖动，没有之前提交的好。C++ 的返回值改成了全序列化好再返回，之前边序列化边返回其实更慢。但是提交之后不出分，不知道为什么，报错服务初始化失败，没扣提交次数。
 - **2022.06.29(howard)**: 完成了 C++ 的代码，但是好像比 Rust 的慢了一倍，原因不明，可能有比较多的复制。更新了一部分云服务相关的脚本。今天没有提交。
 - **2022.06.28(howard)**: 添加了 C++ 的代码，写了一半，准备用 Seastar 作为网络框架，用 folly 的并发数据结构。今天没有提交。
 - **2022.06.27(howard)**: 再问了一下工作人员，说是服务 502 了，那应该就是挂了，不知道是不是 panic 了，可能是 RocksDB 不堪重负了，因为已经添加了自启脚本了。添加了一个纯内存实现的 KV，用 Lockfree Cuckoohash 作为 KV 的存储，把 ZSet 相关的哈希表也用 Lockfree Cuckoohash。QPS 终于有分了，score:16966.3373, init_score:1.0000, api_score:630.0000, qps_score:13496.7147, delay_score:2839.6226
