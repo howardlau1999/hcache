@@ -52,6 +52,9 @@ add_subdirectory(third_party/seastar)
 add_subdirectory(third_party/simdjson)
 include_directories(third_party/rapidjson/include)
 
-add_executable(hcache src/main.cc)
+add_executable(hcache src/hcache.cc)
 add_dependencies(hcache librocksdb_src libfolly_src)
-target_link_libraries(hcache simdjson Seastar::seastar glog::glog librocksdb libfolly ZLIB::ZLIB zstd snappy Boost::boost)
+target_link_libraries(hcache simdjson seastar glog::glog librocksdb libfolly ZLIB::ZLIB zstd snappy Boost::boost)
+
+add_executable(client src/client.cc)
+target_link_libraries(client seastar)
