@@ -4,88 +4,8 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
 
-const yumInstallPackages = `#!/bin/bash
-  yum makecache --refresh
-  yum install -y curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
-`
 
-const aptInstallPackages = `#!/bin/bash
-   mv /etc/apt/sources.list /etc/apt/sources.list.bak  
-      cat <<EOF > /etc/apt/sources.list
-deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
-deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
-EOF
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update 
-      apt-get install -y libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libssl-dev > ~/apt.log
-      apt-get autoremove -y
-`
-
-
-const startupScriptFromCleanImage = `
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log
-      mkdir -p ~/.cargo
-      cat <<EOF > ~/.cargo/config
-[source.crates-io]
-replace-with = 'tuna'
-
-[source.tuna]
-registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
-EOF
-      # Update crates.io index in background
-      . "$HOME/cargo/env"
-      cd /tmp && cargo install lazy_static &
-      cat <<EOF | sudo tee -a /etc/security/limits.conf 
-* hard memlock unlimited
-* soft memlock unlimited
-root hard nofile 1000000
-root soft nofile 1000000
-* hard nofile 1000000
-* soft nofile 1000000
-EOF
-      cat <<EOF | sudo tee -a /etc/sysctl.conf
-net.ipv4.ip_local_port_range = 1024 65535
-net.ipv4.ip_local_reserved_ports = 8080
-net.ipv4.tcp_fin_timeout = 15
-net.ipv4.tcp_tw_reuse = 1
-net.core.somaxconn = 32768
-net.ipv4.tcp_max_tw_buckets = 30000
-net.ipv4.tcp_sack = 1
-kernel.perf_event_paranoid = 1
-fs.aio-max-nr = 1048576
-EOF
-
-        # 自动重启脚本
-        cat <<EOF > ~/auto-restart.sh
-#!/bin/bash
-ulimit -n 1000000
-while true; do
-  /usr/bin/hcache /data
-done
-EOF
-        # 启动脚本
-        cat <<EOF > ~/start.sh
-#!/bin/bash
-export THREAD_COUNT=\\$(nproc)
-cd ~ && nohup ~/auto-restart.sh 2>&1 &
-EOF
-
-      chmod +x ~/start.sh
-      chmod +x ~/auto-restart.sh
-      sysctl -p
-      NOTIFY
-      `;
-const imageAndStartScript = {
-  "alinux": {
-    startScript: `${yumInstallPackages}
-    ${startupScriptFromCleanImage}`,
-    imageId: "aliyun_3_x64_20G_alibase_20220527.vhd",
-  },
-  "debian": {
-    startScript: `${aptInstallPackages}
-    ${startupScriptFromCleanImage}`,
-    imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
-  },
+const imageAndStartScript = { 
   "custom": {
     imageId: process.env.HCACHE_IMAGE_ID,
     startScript: `#!/bin/bash
@@ -101,7 +21,7 @@ export class BenchmarkStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 指定使用的镜像和启动脚本
-    const fromWhich = process.env.IMAGE || "debian";
+    const fromWhich = process.env.IMAGE || "custom";
     const spec = (imageAndStartScript as any)[fromWhich];
     const specImageId = spec.imageId;
     const specStartScript = spec.startScript;
@@ -173,13 +93,13 @@ export class BenchmarkStack extends ros.Stack {
 
     // 等待逻辑，用于等待 ECS 中应用安装完成
     const ecsWaitConditionHandle = new ROS.WaitConditionHandle(this, 'RosWaitConditionHandle', {
-      count: 1
+      count: 2,
     });
 
     const ecsWaitCondition = new ROS.WaitCondition(this, 'RosWaitCondition', {
       timeout: 600,
       handle: ros.Fn.ref('RosWaitConditionHandle'),
-      count: 1
+      count: 2
     });
 
     const clientInstance = new ecs.Instance(this, 'hcache-client', {
