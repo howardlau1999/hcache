@@ -86,22 +86,22 @@ const imageAndStartScript = {
     imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
   },
   "custom": {
-    imageId: "m-2ze6tbibqok06pny2wx3",
+    imageId: process.env.HCACHE_IMAGE_ID,
     startScript: `#!/bin/bash
     NOTIFY
     `,
   }
 }
 
-export class TestStack extends ros.Stack {
+export class BenchmarkStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
     super(scope, id, props);
-    new ros.RosInfo(this, ros.RosInfo.description, "部署一个测试用的和用来打包镜像的按量付费 ECS");
+    new ros.RosInfo(this, ros.RosInfo.description, "部署两台 ECS，一台客户端一台服务器用来 Benchmark");
     // The code that defines your stack goes here
 
     // 指定使用的镜像和启动脚本
-    const fromWhich = "debian";
-    const spec = imageAndStartScript[fromWhich];
+    const fromWhich = process.env.IMAGE || "debian";
+    const spec = (imageAndStartScript as any)[fromWhich];
     const specImageId = spec.imageId;
     const specStartScript = spec.startScript;
 
@@ -112,7 +112,7 @@ export class TestStack extends ros.Stack {
     // 构建 VPC
     const vpc = new ecs.Vpc(this, 'hcache-vpc', {
       vpcName: 'hcache-vpc',
-      cidrBlock: '10.0.0.0/8',
+      cidrBlock: '192.168.0.0/16',
       description: 'hcache vpc'
     });
 
@@ -121,7 +121,7 @@ export class TestStack extends ros.Stack {
       vpcId: vpc.attrVpcId,
       zoneId: zoneId,
       vSwitchName: 'hcache-vswitch',
-      cidrBlock: '10.1.1.0/24',
+      cidrBlock: '192.168.233.0/24',
     });
 
     // 指定系统镜像、系统密码、实例类型
@@ -181,14 +181,14 @@ export class TestStack extends ros.Stack {
       count: 1
     });
 
-    const ecsInstance = new ecs.Instance(this, 'hcache-test', {
+    const clientInstance = new ecs.Instance(this, 'hcache-client', {
       vpcId: vpc.attrVpcId,
       keyPairName: keyPair.attrKeyPairName,
       vSwitchId: vswitch.attrVSwitchId,
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
       instanceType: ecsInstanceType,
-      instanceName: 'hcahce-test-ecs',
+      instanceName: 'hcache-benchmark-client',
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
       spotStrategy: 'SpotAsPriceGo',
@@ -199,8 +199,27 @@ export class TestStack extends ros.Stack {
       userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, specStartScript),
     });
 
-    new ros.RosOutput(this, 'instance_id', { value: ecsInstance.attrInstanceId });
-    new ros.RosOutput(this, 'private_ip', { value: ecsInstance.attrPrivateIp });
-    new ros.RosOutput(this, 'public_ip', { value: ecsInstance.attrPublicIp });
+    const serverInstance = new ecs.Instance(this, 'hcache-server', {
+      vpcId: vpc.attrVpcId,
+      keyPairName: keyPair.attrKeyPairName,
+      vSwitchId: vswitch.attrVSwitchId,
+      imageId: ecsImageId,
+      securityGroupId: sg.attrSecurityGroupId,
+      instanceType: 'ecs.g7.large',
+      instanceName: 'hcache-benchmark-server',
+      systemDiskCategory: ecsSystemDiskCategory,
+      password: ecsPassword,
+      spotStrategy: 'SpotAsPriceGo',
+      spotDuration: 0,
+      allocatePublicIp: false,
+      internetMaxBandwidthOut: 0,
+      internetChargeType: 'PayByTraffic',
+      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, specStartScript),
+    });
+
+    new ros.RosOutput(this, 'instance_id', { value: clientInstance.attrInstanceId });
+    new ros.RosOutput(this, 'private_ip', { value: clientInstance.attrPrivateIp });
+    new ros.RosOutput(this, 'public_ip', { value: clientInstance.attrPublicIp });
+    new ros.RosOutput(this, 'hcache_ip', { value: serverInstance.attrPrivateIp });
   }
 }
