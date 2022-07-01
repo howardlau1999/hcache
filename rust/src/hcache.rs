@@ -493,6 +493,9 @@ fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<Str
     options.set_verify_checksums(false);
     let mut iter = db.raw_iterator_opt(options);
     iter.seek_to_first();
+    let mut count = 0;
+    let tik = std::time::Instant::now();
+    println!("Loading kv...");
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -502,8 +505,11 @@ fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<Str
                 String::from_utf8_unchecked(value.unwrap_unchecked().to_vec()),
             );
         }
+        count += 1;
         iter.next();
     }
+    let duration = tik.elapsed();
+    println!("Loaded {} kvs in {:?}", count, duration);
 }
 
 fn main() {

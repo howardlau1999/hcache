@@ -48,6 +48,7 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/include")
 find_package(ZLIB)
 find_package(Boost)
 find_package(glog)
+find_package(Threads)
 add_subdirectory(third_party/seastar)
 add_subdirectory(third_party/simdjson)
 include_directories(third_party/rapidjson/include)
@@ -58,3 +59,7 @@ target_link_libraries(hcache simdjson seastar glog::glog rocksdb folly ZLIB::ZLI
 
 add_executable(client src/client.cc)
 target_link_libraries(client seastar)
+
+add_executable(gendata src/gendata.cc)
+add_dependencies(gendata rocksdb_src)
+target_link_libraries(gendata rocksdb Threads::Threads ZLIB::ZLIB zstd snappy uring lz4 dl) 

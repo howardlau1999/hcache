@@ -326,7 +326,7 @@ public:
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
         d.Accept(writer);
-      	rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
+        rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
       }
     } else {
       rep->set_status(seastar::httpd::reply::status_type::not_found);
@@ -372,22 +372,26 @@ int main(int argc, char **argv) {
       if (!status.ok()) {
         applog.error("Failed to open RocksDB");
       } else {
+        applog.info("RocksDB opened");
         rocksdb::ReadOptions read_options;
         read_options.readahead_size = 128 * 1024 * 1024;
         read_options.async_io = true;
         read_options.verify_checksums = false;
         auto iter = db->NewIterator(read_options);
+        int key_count = 0;
         iter->SeekToFirst();
         while (iter->Valid()) {
           auto key = iter->key();
           auto value = iter->value();
           hcache.add_key_value(folly::fbstring(key.ToString()), folly::fbstring(value.ToString()));
+          ++key_count;
           iter->Next();
         }
         delete iter;
         std::ofstream _marker(marker_path);
         db->Close();
         delete db;
+        applog.info("Loaded {} keys", key_count);
       }
     }
   }
