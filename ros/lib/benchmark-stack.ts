@@ -33,6 +33,7 @@ replace-with = 'tuna'
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
       # Update crates.io index in background
+      . "$HOME/cargo/env"
       cd /tmp && cargo install lazy_static &
       cat <<EOF | sudo tee -a /etc/security/limits.conf 
 * hard memlock unlimited
