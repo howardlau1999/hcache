@@ -7,4 +7,3 @@ export INSTANCE_ID=$(jq -r '.TestStack | map(select(.OutputKey == "instance_id")
 echo "INSTANCE_ID=$INSTANCE_ID"
 aliyun ecs ModifyInstanceVncPasswd --InstanceId=$INSTANCE_ID --VncPassword=Hca123
 ssh-keygen -f "~/.ssh/known_hosts" -R "$ECS_IP" || true
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$ECS_IP
