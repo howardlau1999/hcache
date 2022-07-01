@@ -24,7 +24,7 @@ lockfree-cuckoohash = { git = "https://github.com/datenlord/lockfree-cuckoohash"
 [features]
 default = ["tokio", "memory"]
 glommio = ["dep:glommio", "dep:num_cpus", "dep:futures-lite"]
-monoio = ["dep:monoio", "dep:num_cpus"]
+monoio = ["dep:monoio", "dep:monoio-compat", "dep:num_cpus"]
 tokio = []
 memory = ["dep:lockfree-cuckoohash"]
 

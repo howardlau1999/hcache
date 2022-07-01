@@ -471,7 +471,7 @@ fn monoio_run(storage: Arc<Storage>) {
                 .build()
                 .unwrap();
             println!("Running http server on 0.0.0.0:8080");
-            rt.block_on(serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
+            rt.block_on(monoio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, storage))
                 .unwrap();
             println!("Http server stopped");
         });
