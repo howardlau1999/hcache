@@ -5,27 +5,27 @@ include(ExternalProject)
 include(ProcessorCount)
 ProcessorCount(N)
 
-ExternalProject_Add(librocksdb_src
+ExternalProject_Add(rocksdb_src
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/rocksdb
     URL ${CMAKE_CURRENT_LIST_DIR}/third_party/rocksdb
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
     BUILD_COMMAND make -j${N} static_lib
     INSTALL_COMMAND ""
-    BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/rocksdb/src/librocksdb_src/librocksdb.a"
+    BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/rocksdb/src/rocksdb_src/librocksdb.a"
 )
 
-ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
-ExternalProject_Get_Property(librocksdb_src source_dir)
+ExternalProject_Add_Step(rocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
+ExternalProject_Get_Property(rocksdb_src source_dir)
 
-add_library(librocksdb STATIC IMPORTED GLOBAL)
-set_property(TARGET librocksdb
+add_library(rocksdb STATIC IMPORTED GLOBAL)
+set_property(TARGET rocksdb
     PROPERTY IMPORTED_LOCATION
     "${source_dir}/librocksdb.a"
 )
 include_directories("${source_dir}/include")
 
-ExternalProject_Add(libfolly_src
+ExternalProject_Add(folly_src
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/folly
     URL ${CMAKE_CURRENT_LIST_DIR}/third_party/folly
     BUILD_IN_SOURCE 1
@@ -36,10 +36,10 @@ ExternalProject_Add(libfolly_src
     BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
 )
 
-ExternalProject_Add_Step(librocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
+ExternalProject_Add_Step(rocksdb_src forcebuild DEPENDEES configure DEPENDERS build ALWAYS 1)
 
-add_library(libfolly STATIC IMPORTED GLOBAL)
-set_property(TARGET libfolly
+add_library(folly STATIC IMPORTED GLOBAL)
+set_property(TARGET folly
     PROPERTY IMPORTED_LOCATION
     "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
 )
@@ -53,8 +53,8 @@ add_subdirectory(third_party/simdjson)
 include_directories(third_party/rapidjson/include)
 
 add_executable(hcache src/hcache.cc)
-add_dependencies(hcache librocksdb_src libfolly_src)
-target_link_libraries(hcache simdjson seastar glog::glog librocksdb libfolly ZLIB::ZLIB zstd snappy Boost::boost)
+add_dependencies(hcache rocksdb_src folly_src)
+target_link_libraries(hcache simdjson seastar glog::glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
 add_executable(client src/client.cc)
 target_link_libraries(client seastar)
