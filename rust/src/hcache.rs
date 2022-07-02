@@ -416,6 +416,59 @@ async fn hyper_handler(
         .unwrap())
 }
 
+#[cfg(feature = "tokio_local")]
+fn tokio_local_run(storage: Arc<Storage>) {
+    use core_affinity::{get_core_ids, set_for_current};
+    use hyper::{server::conn::Http, service::service_fn};
+    use std::net::SocketAddr;
+    let core_ids = get_core_ids().unwrap();
+    let mut worker_threads = vec![];
+    for core_id in core_ids {
+        let storage = storage.clone();
+        let worker = std::thread::spawn(move || {
+            println!("Starting worker {}", core_id.id);
+            set_for_current(core_id);
+            let local_rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            local_rt.block_on(async move {
+                let local = tokio::task::LocalSet::new();
+                local
+                    .run_until(async move {
+                        let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+                        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+                        socket.set_reuseport(true).unwrap();
+                        socket.bind(addr).unwrap();
+                        let listener = socket.listen(1024).unwrap();
+                        while let Ok((conn, _addr)) = listener.accept().await {
+                            let storage = storage.clone();
+                            let http_conn = Http::new().serve_connection(
+                                conn,
+                                service_fn(move |req| hyper_handler(req, storage.clone())),
+                            );
+                            tokio::task::spawn_local(async move {
+                                match http_conn.await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        if !e.is_incomplete_message() {
+                                            eprintln!("Error: {}", e);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    })
+                    .await;
+            })
+        });
+        worker_threads.push(worker);
+    }
+    for worker in worker_threads {
+        worker.join().unwrap();
+    }
+}
+
 #[cfg(feature = "tokio")]
 fn tokio_run(storage: Arc<Storage>) {
     use hyper::{
@@ -546,6 +599,9 @@ fn main() {
         kv,
         zsets: LockFreeCuckooHash::new(),
     });
+
+    #[cfg(feature = "tokio_local")]
+    tokio_local_run(storage);
 
     #[cfg(feature = "tokio")]
     tokio_run(storage);
