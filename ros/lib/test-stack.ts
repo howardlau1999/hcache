@@ -23,7 +23,6 @@ EOF
 
 
 const startupScriptFromCleanImage = `
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly > ~/rustup.log
       mkdir -p ~/.cargo
       cat <<EOF > ~/.cargo/config
 [source.crates-io]
@@ -32,8 +31,7 @@ replace-with = 'tuna'
 [source.tuna]
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
-      # Update crates.io index in background
-      cd /tmp && cargo install lazy_static &
+      bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly && . $HOME/.cargo/env && cd /tmp && cargo install lazy_static" > ~/rustup.log & 
       cat <<EOF | sudo tee -a /etc/security/limits.conf 
 * hard memlock unlimited
 * soft memlock unlimited
