@@ -4,7 +4,7 @@
 
 ## 要点
 
-- 计分公式：$\mathrm{score} = frac{10}{T}+10n+(\frac{50k\cdot\mathrm{qps}}{10000})+\frac{50m}{\mathrm{time\\_ delay}}$
+- 计分公式：$\mathrm{score} = \frac{10}{T}+10n+\frac{50k\cdot\mathrm{qps}}{10000}+\frac{50m}{\mathrm{time\\_ delay}}$
   - $T$ 为加载完成的时间（只在第一次启动的时候计时，后续重启不计）
   - $n$ 为评测的接口个数（正确性，应该是 90 个，目前见到最高分是 900）
   - $k$ 是需要进行评测 QPS 的接口个数（接口性能）
