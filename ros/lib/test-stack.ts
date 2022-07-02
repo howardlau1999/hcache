@@ -106,7 +106,10 @@ export class TestStack extends ros.Stack {
     const specStartScript = spec.startScript;
 
     // 随机选择一个可用区部署
-    const zoneId = ros.Fn.select(0, ros.Fn.getAzs(ros.RosPseudo.region));
+    const zoneId = new ros.RosParameter(this, 'ecs_zone_id', {
+      type: ros.RosParameterType.STRING,
+      defaultValue: ros.Fn.select(0, ros.Fn.getAzs(ros.RosPseudo.region)),
+    });
 
     // 创建虚拟网络
     // 构建 VPC
@@ -180,7 +183,7 @@ export class TestStack extends ros.Stack {
       handle: ros.Fn.ref('RosWaitConditionHandle'),
       count: 1
     });
-    
+
     const ecsInstance = new ecs.Instance(this, 'hcache-test', {
       vpcId: ecsVpc.attrVpcId,
       keyPairName: ecsKeyPair.attrKeyPairName,
