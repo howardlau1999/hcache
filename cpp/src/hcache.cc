@@ -417,6 +417,8 @@ int main(int argc, char **argv) {
             routes.add(seastar::httpd::POST, seastar::httpd::url("/zadd").remainder("k"), new zadd_handler);
             routes.add(seastar::httpd::POST, seastar::httpd::url("/zrange").remainder("k"), new zrange_handler);
             routes.add(seastar::httpd::GET, seastar::httpd::url("/zrmv").remainder("kv"), new zrmv_handler);
+
+            routes.add_default_handler(new init_handler);
           });
         })
         .then([&http_server] {
