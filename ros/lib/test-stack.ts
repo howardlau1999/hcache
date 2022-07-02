@@ -110,15 +110,15 @@ export class TestStack extends ros.Stack {
 
     // 创建虚拟网络
     // 构建 VPC
-    const vpc = new ecs.Vpc(this, 'hcache-vpc', {
+    const ecsVpc = new ecs.Vpc(this, 'hcache-vpc', {
       vpcName: 'hcache-vpc',
       cidrBlock: '10.0.0.0/8',
       description: 'hcache vpc'
     });
 
     // 构建 VSwitch
-    const vswitch = new ecs.VSwitch(this, 'hcache-vswitch', {
-      vpcId: vpc.attrVpcId,
+    const ecsvSwitch = new ecs.VSwitch(this, 'hcache-vswitch', {
+      vpcId: ecsVpc.attrVpcId,
       zoneId: zoneId,
       vSwitchName: 'hcache-vswitch',
       cidrBlock: '10.1.1.0/24',
@@ -137,7 +137,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c7.4xlarge",
+      defaultValue: "ecs.c6.xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -145,11 +145,11 @@ export class TestStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_essd",
+      defaultValue: "cloud_efficiency",
     });
 
     // 创建安全组开放端口
-    const sg = new ecs.SecurityGroup(this, 'hcahce-sg', { vpcId: vpc.attrVpcId });
+    const sg = new ecs.SecurityGroup(this, 'hcahce-sg', { vpcId: ecsVpc.attrVpcId });
 
     let ports = ['22', '8080', '80', '443'];
     for (const port of ports) {
@@ -164,7 +164,7 @@ export class TestStack extends ros.Stack {
 
     // 密钥导入，默认读取本地的公钥
     const pubKey = readFileSync(`${process.env.HOME}/.ssh/id_rsa.pub`).toString();
-    const keyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
+    const ecsKeyPair = new ecs.SSHKeyPair(this, 'hcache-key-pair', {
       keyPairName: `hcache-key-pair-${hostname()}`,
       publicKeyBody: pubKey,
       tags: [{ key: 'hcache', value: hostname() }],
@@ -180,11 +180,11 @@ export class TestStack extends ros.Stack {
       handle: ros.Fn.ref('RosWaitConditionHandle'),
       count: 1
     });
-
+    
     const ecsInstance = new ecs.Instance(this, 'hcache-test', {
-      vpcId: vpc.attrVpcId,
-      keyPairName: keyPair.attrKeyPairName,
-      vSwitchId: vswitch.attrVSwitchId,
+      vpcId: ecsVpc.attrVpcId,
+      keyPairName: ecsKeyPair.attrKeyPairName,
+      vSwitchId: ecsvSwitch.attrVSwitchId,
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
       instanceType: ecsInstanceType,
