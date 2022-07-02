@@ -1,0 +1,296 @@
+{
+  "ROSTemplateFormatVersion": "2015-09-01",
+  "Description": {
+      "en": "Alibaba Cloud ROS sample template: Create an ECS deployment Web application.",
+      "zh-cn": "阿里巴巴 Cloud ROS 示例模板：创建一台ECS部署web应用。"
+  },
+  "Parameters": {
+      "vpc_id": {
+          "Type": "String",
+          "AssociationProperty": "ALIYUN::ECS::VPC::VPCId",
+          "Description": {
+              "en": "Please search the ID starts with (vpc-xxx)from console-Virtual Private Cloud",
+              "zh-cn": "控制台-VPC-专有网络下查询"
+          },
+          "Label": {
+              "en": "Existing VPC ID",
+              "zh-cn": "现有VPC的实例ID"
+          }
+      },
+      "vswitch_zone_id": {
+          "Type": "String",
+          "AssociationProperty": "ALIYUN::ECS::Instance::ZoneId",
+          "Description": {
+              "en": "Availability ID for existing switches",
+              "zh-cn": "现有交换机的可用区ID"
+          },
+          "Label": {
+              "en": "VSwitch Zone ID",
+              "zh-cn": "交换机可用区"
+          }
+      },
+      "vswitch_id": {
+          "Type": "String",
+          "AssociationProperty": "ALIYUN::ECS::VSwitch::VSwitchId",
+          "Description": {
+              "en": "Please search the business VSwitch ID starts with(vsw-xxx)from console-Virtual Private Cloud-VSwitches",
+              "zh-cn": "现有业务网络交换机的实例ID,控制台-VPC-专有网络-交换机下查询"
+          },
+          "Label": {
+              "en": "VSwitch ID",
+              "zh-cn": "网络交换机ID"
+          },
+          "AssociationPropertyMetadata": {
+              "ZoneId": "vswitch_zone_id",
+              "VpcId": "vpc_id"
+          }
+      },
+      "security_group_id": {
+          "Type": "String",
+          "AssociationProperty": "ALIYUN::ECS::SecurityGroup::SecurityGroupId",
+          "Description": {
+              "en": "Please search the business security group ID starts with(sg-xxx)from console-ECS-Network & Security",
+              "zh-cn": "现有业务安全组的实例ID,控制台-ECS-网络与安全-安全组下查询"
+          },
+          "Label": {
+              "en": "Business Security Group ID",
+              "zh-cn": "业务安全组ID"
+          },
+          "AssociationPropertyMetadata": {
+              "VpcId": "vpc_id"
+          }
+      },
+      "ecs_password": {
+          "NoEcho": true,
+          "Type": "String",
+          "Description": {
+              "en": "Server login password, Length 8-30, must contain three(Capital letters, lowercase letters, numbers, _-&:;'<>,=%`~!@#()$^*+|{}[].?/ Special symbol in).",
+              "zh-cn": "服务器登录密码,长度8-30，必须包含三项（大写字母、小写字母、数字、 _-&:;'<>,=%`~!@#()$^*+|{}[].?/ 中的特殊符号）。"
+          },
+          "AllowedPattern": "[0-9A-Za-z\\_\\-\\&:;'<>,=%`~!@#\\(\\)\\$\\^\\*\\+\\|\\{\\}\\[\\]\\.\\?\\/]+$",
+          "Label": {
+              "en": "Instance password",
+              "zh-cn": "实例密码"
+          },
+          "ConstraintDescription": {
+              "zh-cn": "长度8-30，必须包含三项（大写字母、小写字母、数字、 _-&:;'<>,=%`~!@#()$^*+|{}[].?/ 中的特殊符号）。",
+              "en": "Length 8-30, must contain three(Capital letters, lowercase letters, numbers, _-&:;'<>,=%`~!@#()$^*+|{}[].?/ Special symbol in)."
+          },
+          "MinLength": "8",
+          "MaxLength": "30"
+      },
+      "ecs_instance_type": {
+          "Type": "String",
+          "Description": {
+              "en": "<font color='blue'><b>1.Before selecting the model please confirm that the current available zone under the model is in stock, some models need to be reported in advance</b></font>]<br><font color='blue'><b>2.List of optional models</font>]<br></b></font>[ecs.c5.large <font color='green'>2vCPU 4GiB Intranet bandwidth1Gbps In-grid sending and receiving packages30MillionPPSS</font>]<br></b>[ecs.c5.xlarge <font color='green'>4vCPU 8GiB Intranet bandwidth1.5Gbps In-grid sending and receiving packages50MillionPPS</font>]<br></b>[ecs.c5.2xlarge <font color='green'>8vCPU 16GiB Intranet bandwidth2.5Gbps In-grid sending and receiving packages80MillionPPS</font>]",
+              "zh-cn": "<font color='blue'><b>1.选择机型前请先确认当前可用区下该机型是否有货，部分机型需要提前报备</b></font><br><font color='blue'><b>2.可选机型列表</font><br></b></font>[ecs.c5.large <font color='green'>2vCPU 4GiB 内网带宽1Gbps 内网收发包30万PPS</font>]<br></b>[ecs.c5.xlarge <font color='green'>4vCPU 8GiB 内网带宽1.5Gbps 内网收发包50万PPS</font>]<br></b>[ecs.c5.2xlarge <font color='green'>8vCPU 16GiB 内网带宽2.5Gbps 内网收发包80万PPS</font>]"
+          },
+          "Label": {
+              "en": "Instance Type",
+              "zh-cn": "实例规格"
+          },
+          "AssociationProperty": "ALIYUN::ECS::Instance::InstanceType",
+          "AssociationPropertyMetadata": {
+              "ZoneId": "vswitch_zone_id"
+          },
+          "Default": "ecs.c6.xlarge"
+      },
+      "ecs_image_id": {
+          "Type": "String",
+          "Description": {
+              "en": "Image ID，See detail：<b><a href='https://www.alibabacloud.com/help/doc-detail/112977.html' target='_blank'><font color='blue'>Find the mirror</font></a></b>",
+              "zh-cn": "镜像ID, 详见：<b><a href='https://help.aliyun.com/document_detail/112977.html' target='_blank'><font color='blue'>查找镜像</font></a></b>"
+          },
+          "Label": {
+              "en": "Image ID",
+              "zh-cn": "镜像ID"
+          },
+          "Default": "m-2ze5iosdwq4l46ldhuwt"
+      },
+      "ecs_system_disk_category": {
+          "Type": "String",
+          "Description": {
+              "en": "<font color='blue'><b>Optional values:</b></font><br>[cloud_efficiency: <font color='green'>Efficient Cloud Disk</font>]<br>[cloud_ssd: <font color='green'>SSD Cloud Disk</font>]<br>[cloud_essd: <font color='green'>ESSD Cloud Disk</font>]<br>[cloud: <font color='green'>Cloud Disk</font>]<br>[ephemeral_ssd: <font color='green'>Local SSD Cloud Disk</font>]",
+              "zh-cn": "<font color='blue'><b>可选值：</b></font><br>[cloud_efficiency: <font color='green'>高效云盘</font>]<br>[cloud_ssd: <font color='green'>SSD云盘</font>]<br>[cloud_essd: <font color='green'>ESSD云盘</font>]<br>[cloud: <font color='green'>普通云盘</font>]<br>[ephemeral_ssd: <font color='green'>本地SSD盘</font>]"
+          },
+          "Label": {
+              "en": "System Disk Type",
+              "zh-cn": "系统盘类型"
+          },
+          "Default": "cloud_efficiency"
+      },
+      "nas_url": {
+          "Type": "String",
+          "Description": {
+              "en": "<font color='blue'><b>Optional values:</b></font><br>[cloud_efficiency: <font color='green'>Efficient Cloud Disk</font>]<br>[cloud_ssd: <font color='green'>SSD Cloud Disk</font>]<br>[cloud_essd: <font color='green'>ESSD Cloud Disk</font>]<br>[cloud: <font color='green'>Cloud Disk</font>]<br>[ephemeral_ssd: <font color='green'>Local SSD Cloud Disk</font>]",
+              "zh-cn": "<font color='blue'><b>可选值：</b></font><br>[cloud_efficiency: <font color='green'>高效云盘</font>]<br>[cloud_ssd: <font color='green'>SSD云盘</font>]<br>[cloud_essd: <font color='green'>ESSD云盘</font>]<br>[cloud: <font color='green'>普通云盘</font>]<br>[ephemeral_ssd: <font color='green'>本地SSD盘</font>]"
+          },
+          "Label": {
+              "en": "nas_url",
+              "zh-cn": "nas_url"
+          }
+      }
+  },
+  "Metadata": {
+      "ALIYUN::ROS::Interface": {
+          "ParameterGroups": [
+              {
+                  "Parameters": [
+                      "vpc_id",
+                      "vswitch_zone_id",
+                      "vswitch_id",
+                      "security_group_id"
+                  ],
+                  "Label": {
+                      "default": {
+                          "en": "Infrastructure Configuration",
+                          "zh-cn": "基础资源配置（必填）"
+                      }
+                  }
+              },
+              {
+                  "Parameters": [
+                      "zip_url",
+                      "sh_url",
+                      "ecs_instance_type",
+                      "ecs_image_id",
+                      "ecs_system_disk_category",
+                      "ecs_password",
+                      "nas_url"
+                  ],
+                  "Label": {
+                      "default": {
+                          "en": "Application Service Configuration",
+                          "zh-cn": "应用服务配置"
+                      }
+                  }
+              }
+          ],
+          "TemplateTags": [
+              "Web Service Example"
+          ]
+      }
+  },
+  "Resources": {
+      "EcsWebServiceWaitConditionHandle": {
+          "Type": "ALIYUN::ROS::WaitConditionHandle"
+      },
+      "EcsWebServiceWaitCondition": {
+          "Type": "ALIYUN::ROS::WaitCondition",
+          "DependsOn": [
+              "EcsWebServiceWaitConditionHandle"
+          ],
+          "Properties": {
+              "Timeout": 1800,
+              "Count": 1,
+              "Handle": {
+                  "Ref": "EcsWebServiceWaitConditionHandle"
+              }
+          }
+      },
+      "EcsWebService": {
+          "Type": "ALIYUN::ECS::InstanceGroup",
+          "Properties": {
+              "VpcId": {
+                  "Ref": "vpc_id"
+              },
+              "VSwitchId": {
+                  "Ref": "vswitch_id"
+              },
+              "SecurityGroupId": {
+                  "Ref": "security_group_id"
+              },
+              "SystemDiskCategory": {
+                  "Ref": "ecs_system_disk_category"
+              },
+              "InstanceType": {
+                  "Ref": "ecs_instance_type"
+              },
+              "InstanceChargeType": "PostPaid",
+              "MaxAmount": 1,
+              "InstanceName": "SampleWebService-App",
+              "ImageId": {
+                  "Ref": "ecs_image_id"
+              },
+              "AllocatePublicIP": false,
+              "HostName": "SampleWebService-App",
+              "Password": {
+                  "Ref": "ecs_password"
+              },
+              "UserData": {
+                  "Fn::Replace": [
+                      {
+                          "ros-notify": {
+                              "Fn::GetAtt": [
+                                  "EcsWebServiceWaitConditionHandle",
+                                  "CurlCli"
+                              ]
+                          }
+                      },
+                      {
+                          "Fn::Join": [
+                              "",
+                              [
+                                  "#!/bin/sh \n",
+                                  "nas_url='",
+                                  {
+                                      "Ref": "nas_url"
+                                  },
+                                  "' \n",
+                                  "sudo rm -rf /data && sudo mkdir /data \n",
+                                  "sudo mkdir /data2\n",
+                                  "sudo mount -t nfs -o vers=3,nolock,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport \"${nas_url}\"  /data2 \n",
+                                  "cp /data2/* /data/ \n",
+                                  "################# shell 示例 - 启动服务 ################# \n",
+                                  "cd ~ && bash start.sh \n",
+                                  "ros-notify \n"
+                              ]
+                          ]
+                      }
+                  ]
+              }
+          }
+      }
+  },
+  "Outputs": {
+      "instance_id": {
+          "Value": {
+              "Fn::Select": [
+                  "0",
+                  {
+                      "Fn::GetAtt": [
+                          "EcsWebService",
+                          "InstanceIds"
+                      ]
+                  }
+              ]
+          }
+      },
+      "private_ip": {
+          "Value": {
+              "Fn::Select": [
+                  "0",
+                  {
+                      "Fn::GetAtt": [
+                          "EcsWebService",
+                          "PrivateIps"
+                      ]
+                  }
+              ]
+          }
+      },
+      "public_ip": {
+          "Value": {
+              "Fn::Select": [
+                  "0",
+                  {
+                      "Fn::GetAtt": [
+                          "EcsWebService",
+                          "PublicIps"
+                      ]
+                  }
+              ]
+          }
+      }
+  }
+}
