@@ -59,7 +59,7 @@ export class SubmissionStack extends ros.Stack {
       count: 1
     });
     const ecsWaitCondition = new ROS.WaitCondition(this, 'RosWaitCondition', {
-      timeout: 300,
+      timeout: 1800,
       handle: ros.Fn.ref('RosWaitConditionHandle'),
       count: 1
     });
@@ -78,15 +78,15 @@ export class SubmissionStack extends ros.Stack {
       userData: ros.Fn.replace(
         { "ros-notify": ecsWaitConditionHandle.attrCurlCli },
         `#!/bin/bash
-        export nas_url=${nasUrl.valueAsString}
-        sudo mkdir /data2
-        sudo rm -rf /data && sudo mkdir /data
+        export nas_url='${nasUrl.valueAsString}'
+        sudo mkdir -p /data2
+        sudo mkdir -p /data
         sudo mount -t nfs -o vers=3,nolock,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport "\${nas_url}" /data2
+        sleep 15
         cp /data2/* /data/
-
+        ros-notify
         cd ~ && bash start.sh
-
-        ros-notify`
+        `
       ),
     });
     new ros.RosOutput(this, 'instance_id', { value: ros.Fn.select(0, ecsGroups.getAtt('InstanceIds')) });
