@@ -99,7 +99,11 @@ replace-with = 'tuna'
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 ```
 
-配置完成之后，运行 `cargo build` 检查是否能正常编译。
+配置完成之后，运行 `./build-rust.sh` 检查是否能正常编译。
+
+### C++
+
+先运行 `./get-cpp-deps.sh` 安装 C++ 相关依赖，然后运行 `./build-cpp.sh` 来编译。
 
 ### 阿里云命令行工具
 
