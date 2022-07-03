@@ -33,14 +33,22 @@ where
 {
     let listener = TcpListener::bind(addr.into())?;
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, addr) = listener.accept().await?;
         let storage = storage.clone();
-        monoio::spawn(Http::new().with_executor(HyperExecutor).serve_connection(
-            unsafe { TcpStreamCompat::new(stream) },
-            service_fn(move |req| {
-                let storage = storage.clone();
-                service(req, storage)
-            }),
-        ));
+        monoio::spawn(async move {
+            if let Err(e) = Http::new()
+                .with_executor(HyperExecutor)
+                .serve_connection(
+                    unsafe { TcpStreamCompat::new(stream) },
+                    service_fn(move |req| {
+                        let storage = storage.clone();
+                        service(req, storage)
+                    }),
+                )
+                .await
+            {
+                eprintln!("{:?} : {}", addr, e)
+            }
+        });
     }
 }
