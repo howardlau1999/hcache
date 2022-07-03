@@ -27,6 +27,7 @@ tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring", optional = true
 default = ["tokio", "memory"]
 glommio = ["dep:glommio", "dep:num_cpus", "dep:futures-lite"]
 monoio = ["dep:monoio", "dep:monoio-compat", "dep:num_cpus"]
+monoio_parser = ["dep:monoio", "dep:num_cpus"]
 tokio = []
 memory = ["dep:lockfree-cuckoohash"]
 tokio_local = ["dep:core_affinity"]

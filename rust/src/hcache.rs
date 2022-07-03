@@ -4,6 +4,13 @@ mod glommio_hyper;
 #[cfg(feature = "monoio")]
 mod monoio_hyper;
 
+#[cfg(feature = "monoio_parser")]
+mod monoio_parser;
+#[cfg(feature = "monoio_parser")]
+mod http_parser;
+#[cfg(feature = "monoio_parser")]
+use monoio_parser::monoio_parser_run;
+
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 
@@ -381,6 +388,7 @@ async fn handle_list(
     )
 }
 
+#[cfg(not(feature = "monoio_parser"))]
 async fn hyper_handler(
     req: Request<Body>,
     storage: Arc<Storage>,
@@ -641,7 +649,11 @@ fn main() {
 
     #[cfg(feature = "glommio")]
     glommio_run(storage);
-
+    
     #[cfg(feature = "monoio")]
     monoio_run(storage);
+
+    #[cfg(feature = "monoio_parser")]
+    monoio_parser_run(storage);
+
 }
