@@ -60,7 +60,7 @@ EOF
 ulimit -n 1000000
 export INIT_DIR=/data
 while true; do
-  /usr/bin/hcache
+  /usr/bin/hcache --poll-mode --reserve-memory 512M --max-networking-io-control-blocks 50000
 done
 EOF
         # 启动脚本
