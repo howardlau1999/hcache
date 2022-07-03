@@ -58,7 +58,7 @@ public:
         }
 
         future<> do_req() {
-            return _write_buf.write("GET / HTTP/1.1\r\nHost: 127.0.0.1:10000\r\n\r\n").then([this] {
+            return _write_buf.write("GET /init HTTP/1.1\r\nHost: 127.0.0.1:10000\r\n\r\n").then([this] {
                 return _write_buf.flush();
             }).then([this] {
                 _parser.init();
@@ -68,12 +68,13 @@ public:
                         return make_ready_future<>();
                     }
                     auto _rsp = _parser.get_parsed_response();
-                    auto it = _rsp->_headers.find("Content-Length");
-                    if (it == _rsp->_headers.end()) {
+                    auto it = _rsp->_headers.find("content-length");
+                    auto it2 = _rsp->_headers.find("Content-Length");
+                    if (it == _rsp->_headers.end() && it2 == _rsp->_headers.end()) {
                         fmt::print("Error: HTTP response does not contain: Content-Length\n");
                         return make_ready_future<>();
                     }
-                    auto content_len = std::stoi(it->second);
+                    auto content_len = std::stoi(it == _rsp->_headers.end() ? it2->second : it->second);
                     http_debug("Content-Length = %d\n", content_len);
                     // Read HTTP response body
                     return _read_buf.read_exactly(content_len).then([this] (temporary_buffer<char> buf) {
@@ -156,7 +157,7 @@ int main(int ac, char** av) {
     app_template app(std::move(app_cfg));
 
     app.add_options()
-        ("server,s", bpo::value<std::string>()->default_value("192.168.66.100:10000"), "Server address")
+        ("server,s", bpo::value<std::string>()->default_value("127.0.0.1:8080"), "Server address")
         ("conn,c", bpo::value<unsigned>()->default_value(100), "total connections")
         ("reqs,r", bpo::value<unsigned>()->default_value(0), "reqs per connection")
         ("duration,d", bpo::value<unsigned>()->default_value(10), "duration of the test in seconds)");
