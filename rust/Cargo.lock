@@ -801,7 +801,7 @@ dependencies = [
 [[package]]
 name = "monoio"
 version = "0.0.7"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/bytedance/monoio#30db4a2c5ae956721654875089776a1125e62781"
 dependencies = [
  "bytes",
  "fxhash",
@@ -818,7 +818,7 @@ dependencies = [
 [[package]]
 name = "monoio-compat"
 version = "0.0.7"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/bytedance/monoio#30db4a2c5ae956721654875089776a1125e62781"
 dependencies = [
  "monoio",
  "reusable-box-future",
@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "monoio-macros"
 version = "0.0.3"
-source = "git+https://github.com/howardlau1999/monoio#0dc5c9e279c4aca67419ed4d8d2960f92db208c4"
+source = "git+https://github.com/bytedance/monoio#30db4a2c5ae956721654875089776a1125e62781"
 dependencies = [
  "proc-macro2",
  "quote",
