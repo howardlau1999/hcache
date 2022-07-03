@@ -112,14 +112,11 @@ export class DPDKStack extends ros.Stack {
         apt-get install -y ccache libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libnuma-dev libssl-dev python3 python3-pyelftools meson ninja-build > ~/apt.log
         mkdir -p ~/.ssh
         cat <<EOF > ~/.ssh/id_rsa
-
 SSH_PRIVATE_KEY
-
 EOF
-        cat <<EOF > ~/.ssh/authorized_keys
+        cat <<EOF >> ~/.ssh/authorized_keys
     
 SSH_PUBLIC_KEY
-
 EOF
       NOTIFY
         `),
