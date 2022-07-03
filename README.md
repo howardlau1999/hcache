@@ -63,14 +63,18 @@
 ## Change Log
 
 - **2022.07.03(howard)**: C++ 还是没能跑起来，还是说 ROS 创建失败，搞不懂了。今天用 `/init` 接口裸测了不同框架的 QPS，用的是 Seastar 提供的 Client 模板。在一个 8 核虚拟机，用 `taskset` 指定其中四个核跑服务器，另外四个跑客户端。
-  - Tokio+绑核+LocalSet: 506379.731524
-  - Tokio: 327308.681400
-  - Glommio: 247643.686705（出现了不同核心负载不均衡的问题）
-  - Monoio: 329932.864845
-  - Seastar: 453846.273910
-  - Seastar+epoll: 451040.219765
-  - Seastar+io_uring: 161860.952820
-  - 总结：io_uring 看起来并不如想象中那样好用，最强的是 Tokio+LocalSet，其次是 Seastar 默认。
+  - Rust:
+    - Tokio+绑核+LocalSet: 506379.731524
+    - Tokio: 327308.681400
+    - Glommio: 247643.686705（出现了不同核心负载不均衡的问题）
+    - Monoio: 329932.864845
+  - C++:
+    - Seastar: 453846.273910
+    - Seastar+epoll: 451040.219765
+    - Seastar+io_uring: 161860.952820
+    - Drogon: 509788.566434
+  - 总结：io_uring 看起来并不如想象中那样好用，最强的是 Drogon 和 Tokio+LocalSet，其次是 Seastar 默认。
+  但是交了 Drogon 上去得分很低，score:1705.9851, init_score:10.0000, api_score:630.0000, qps_score:1065.9351, delay_score:0.0500
 - **2022.07.02(howard)**: 问了下工作人员，说是 ROS 创建失败，但是只有交 Rust+Tokio 的才能创建成功就很奇怪。写了用 Tokio 的 LocalSet 模拟了的 Thread Per Core 模型。调整了一下 ROS 脚本，终于出分了，比之前又高了一点，score:18198.5305, init_score:5.0000 api_score:630.0000, qps_score:13704.5562, delay_score:3858.9744
 - **2022.07.01(howard)**: 发现 glommio 卡死不是库的锅，而是 Linux 内核锅，改成用内网 IP 访问就能正常压测了。但是评测机好像不支持 io-uring，用 Rust 和 C++ 写的都出不了分，原因不明。把 tokio 的重新交了一次，分变高了，score:17243.5115, init_score:5.0000, api_score:630.0000, qps_score:13336.7723, delay_score:3271.7391。把 Seastar 改成用 `epoll` 作为 Reactor Backend，也不行。
 - **2022.06.30(howard)**: C++ 部分 JSON 解析库改成 simdjson。系统镜像方面将基础镜像改成 AliLinux，Rust 初始化读 KV 的时候不校验 Checksum，使用 RawIterator 并开启迭代器的 ReadAhead，提交了一次。score:16736.6896, init_score:10.0000, api_score:630.0000, qps_score:13360.3260, delay_score:2736.3636，看起来初始化优化有用，但延迟和 QPS 可能是评测系统有一些抖动，没有之前提交的好。C++ 的返回值改成了全序列化好再返回，之前边序列化边返回其实更慢。但是提交之后不出分，不知道为什么，报错服务初始化失败，没扣提交次数。

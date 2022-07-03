@@ -17,9 +17,9 @@ deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
-      apt-get install -y ccache libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \\
-      build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev \\
-      liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev > ~/apt.log
+      apt-get install -y ccache libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev >> ~/apt.log
+      apt-get install -y build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev libssl3 >> ~/apt.log
+      apt-get install -y liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev >> ~/apt.log
       apt-get autoremove -y
 `
 
@@ -60,13 +60,12 @@ EOF
 ulimit -n 1000000
 export INIT_DIR=/data
 while true; do
-  /usr/bin/hcache --reactor-backend io_uring
+  /usr/bin/hcache
 done
 EOF
         # 启动脚本
         cat <<EOF > ~/start.sh
 #!/bin/bash
-export THREAD_COUNT=\\$(nproc)
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
       ln -s /usr/bin/ccache /usr/local/bin/gcc

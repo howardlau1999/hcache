@@ -13,3 +13,6 @@
 [submodule "cpp/third_party/simdjson"]
 	path = cpp/third_party/simdjson
 	url = https://github.com/simdjson/simdjson
+[submodule "cpp/third_party/drogon"]
+	path = cpp/third_party/drogon
+	url = https://github.com/drogonframework/drogon
