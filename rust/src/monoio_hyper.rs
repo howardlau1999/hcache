@@ -47,7 +47,9 @@ where
                 )
                 .await
             {
-                eprintln!("{:?} : {}", addr, e)
+                if !e.is_incomplete_message() {
+                    eprintln!("{:?} : {}", addr, e)
+                }
             }
         });
     }

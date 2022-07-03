@@ -552,10 +552,12 @@ fn glommio_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "monoio")]
 fn monoio_run(storage: Arc<Storage>) {
+    let core_ids = core_affinity::get_core_ids().unwrap();
     let mut threads = vec![];
-    for _ in 0..num_cpus::get() {
+    for core_id in core_ids {
         let storage = storage.clone();
-        let thread = std::thread::spawn(|| {
+        let thread = std::thread::spawn(move || {
+            core_affinity::set_for_current(core_id);
             let mut rt = monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
                 .enable_all()
                 .with_entries(512)
