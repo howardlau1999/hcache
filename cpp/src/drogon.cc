@@ -14,6 +14,7 @@ public:
   virtual void
   asyncHandleHttpRequest(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) override {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     resp->setBody("ok");
     callback(resp);
   }
@@ -30,6 +31,7 @@ public:
   void query(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &key)
       const {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     auto const &value = hcache.get_value_by_key(std::move(key_string));
     if (value.has_value()) {
@@ -51,6 +53,7 @@ public:
   del(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
       const std::string &key) const {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     hcache.del_key(std::move(key_string));
     callback(resp);
@@ -62,6 +65,7 @@ public:
   virtual void
   asyncHandleHttpRequest(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) override {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     auto document = parser.parse(json);
@@ -80,6 +84,7 @@ public:
   virtual void
   asyncHandleHttpRequest(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) override {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     for (auto const &kv: parser.parse(json)) {
@@ -100,6 +105,7 @@ public:
   virtual void
   asyncHandleHttpRequest(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) override {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_APPLICATION_JSON);
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     folly::F14FastSet<folly::StringPiece> keys;
@@ -142,6 +148,7 @@ public:
   void zadd(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &key)
       const {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     auto document = parser.parse(json);
@@ -158,7 +165,7 @@ public:
       const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
       const std::string &key) const {
     auto resp = HttpResponse::newHttpResponse();
-
+    resp->setContentTypeCode(ContentType::CT_APPLICATION_JSON);
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     auto document = parser.parse(json);
@@ -200,6 +207,7 @@ public:
       const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &key,
       const std::string &value) const {
     auto resp = HttpResponse::newHttpResponse();
+    resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
     hcache.zset_rmv(key, value);
     callback(resp);
   }
@@ -207,12 +215,18 @@ public:
 
 int main() {
   init_storage();
-  app()
-      .setThreadNum(0)
-      .setClientMaxBodySize(512 * 1024 * 1024)
-      .setServerHeaderField("hcache")
-      .setLogLevel(trantor::Logger::kDebug)
-      .addListener("0.0.0.0", 8080)
-      .run();
+  auto &a = app()
+                .setThreadNum(4)
+                .setClientMaxBodySize(512 * 1024 * 1024)
+                .setClientMaxMemoryBodySize(512 * 1024)
+                .setMaxConnectionNum(10000000)
+                .enableDateHeader(false)
+                .enableBrotli(false)
+                .enableGzip(false)
+                .enableServerHeader(false)
+                .setLogLevel(trantor::Logger::kDebug)
+                .addListener("0.0.0.0", 8080);
+  a.enableReusePort();
+  a.run();
   return 0;
 }
