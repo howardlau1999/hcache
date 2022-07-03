@@ -469,6 +469,36 @@ fn tokio_local_run(storage: Arc<Storage>) {
     }
 }
 
+#[cfg(feature = "tokio_uring")]
+fn tokio_uring_run(storage: Arc<Storage>) {
+    use hyper::{
+        service::service_fn,
+        server::conn::Http
+    };
+    use std::net::SocketAddr;
+    tokio_uring::start(async {
+        let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+        let listener = tokio_uring::net::TcpListener::bind(addr).unwrap();
+        while let Ok((conn, _addr)) = listener.accept().await {
+            let storage = storage.clone();
+            let http_conn = Http::new().serve_connection(
+                conn,
+                service_fn(move |req| hyper_handler(req, storage.clone())),
+            );
+            tokio::task::spawn_local(async move {
+                match http_conn.await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        if !e.is_incomplete_message() {
+                            eprintln!("Error: {}", e);
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
+
 #[cfg(feature = "tokio")]
 fn tokio_run(storage: Arc<Storage>) {
     use hyper::{
@@ -599,6 +629,9 @@ fn main() {
         kv,
         zsets: LockFreeCuckooHash::new(),
     });
+
+    #[cfg(feature = "tokio_uring")]
+    tokio_uring_run(storage);
 
     #[cfg(feature = "tokio_local")]
     tokio_local_run(storage);

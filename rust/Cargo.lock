@@ -504,6 +504,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-uring",
 ]
 
 [[package]]
@@ -1233,6 +1234,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tokio-uring"
+version = "0.3.0"
+source = "git+https://github.com/tokio-rs/tokio-uring#6cacd95ee28c0d9bb5ce19aca4145788f988bbb8"
+dependencies = [
+ "io-uring",
+ "libc",
+ "scoped-tls",
+ "slab",
+ "socket2 0.4.4",
+ "tokio",
 ]
 
 [[package]]
