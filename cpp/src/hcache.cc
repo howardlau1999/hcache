@@ -171,10 +171,10 @@ public:
         auto &sv_list = d.SetArray();
         auto &allocator = d.GetAllocator();
         for (auto const &sv: score_values) {
-          auto values_ptr = sv.values;
-          for (auto it = values_ptr->cbegin(); it != values_ptr->cend(); ++it) {
+          auto const &values = sv.values;
+          for (auto it = values.cbegin(); it != values.cend(); ++it) {
             auto &&sv_object = rapidjson::Value(rapidjson::kObjectType);
-            auto &&v_string = rapidjson::Value(it->first.data(), it->first.size(), allocator);
+            auto &&v_string = rapidjson::Value(it->data(), it->size());
             sv_object.AddMember("score", sv.score, allocator);
             sv_object.AddMember("value", v_string, allocator);
             sv_list.PushBack(sv_object, allocator);

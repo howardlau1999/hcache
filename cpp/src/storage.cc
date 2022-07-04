@@ -1,38 +1,37 @@
+#include <filesystem>
+#include <folly/SharedMutex.h>
+#include <fstream>
 #include <hcache/storage.h>
 #include <rocksdb/db.h>
-#include <filesystem>
-#include <fstream>
 
 storage hcache;
 
 void zset::zrmv(folly::fbstring const &value) {
   auto it = value_to_score_.find(value);
   if (it == value_to_score_.end()) { return; }
-  csl::Accessor accessor(score_to_values_);
-  auto old_score_it = accessor.find({it->second, nullptr});
-  if (old_score_it.good()) {
-    old_score_it->values->erase(value);
-    if (old_score_it->values->empty()) { accessor.remove({it->second, nullptr}); }
-  }
+  mutex_.lock();
+  auto score = it->second;
+  auto &values = score_to_values_[score];
+  values.erase(value);
+  if (values.empty()) { score_to_values_.erase(score); }
+  mutex_.unlock();
 }
 
 void zset::zadd(folly::fbstring const &value, uint32_t score) {
   auto it = value_to_score_.find(value);
   if (it != value_to_score_.end()) {
-    csl::Accessor accessor(score_to_values_);
-    // Remove from old score
-    auto old_score_it = accessor.find(score_values{it->second, nullptr});
-    old_score_it->values->erase(value);
-    if (old_score_it->values->empty()) { accessor.remove({it->second, nullptr}); }
+    mutex_.lock();
+    auto old_score = it->second;
+    auto &old_values = score_to_values_[old_score];
+    old_values.erase(value);
+    if (old_values.empty()) { score_to_values_.erase(old_score); }
+    mutex_.unlock();
   }
-  csl::Accessor accessor(score_to_values_);
-  auto new_score_it = accessor.find(score_values{score, nullptr});
-  if (new_score_it.good()) {
-    new_score_it->values->emplace(value, unit{});
-  } else {
-    auto new_values = std::make_shared<folly::ConcurrentHashMap<folly::fbstring, unit>>();
-    new_values->emplace(value, unit{});
-    accessor.insert(score_values{score, new_values});
+  {
+    mutex_.lock();
+    auto &values = score_to_values_[score];
+    values.emplace(value);
+    mutex_.unlock();
   }
   value_to_score_.erase(value);
   value_to_score_.emplace(value, score);
@@ -40,14 +39,12 @@ void zset::zadd(folly::fbstring const &value, uint32_t score) {
 
 folly::fbvector<zset::score_values> zset::zrange(uint32_t min_score, uint32_t max_score) {
   folly::fbvector<score_values> result;
-  csl::Accessor accessor(score_to_values_);
-  csl::Skipper skipper(accessor);
-  skipper.to({min_score, nullptr});
-  while (skipper.good() && skipper->score <= max_score) {
-    result.push_back(*skipper);
-    ++skipper;
+  mutex_.lock_shared();
+  for (auto it = score_to_values_.lower_bound(min_score); it != score_to_values_.end(); ++it) {
+    if (it->first > max_score) { break; }
+    result.emplace_back(it->first, it->second);
   }
-
+  mutex_.unlock_shared();
   return result;
 }
 

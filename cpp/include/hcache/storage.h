@@ -8,6 +8,7 @@
 #include <folly/concurrency/AtomicSharedPtr.h>
 #include <folly/concurrency/ConcurrentHashMap.h>
 #include <folly/container/F14Set.h>
+#include <boost/container/flat_map.hpp>
 
 struct key_value {
   key_value(folly::StringPiece const &key, folly::fbstring const &value) : key(key), value(value) {}
@@ -17,24 +18,15 @@ struct key_value {
 };
 
 class zset {
+  folly::SharedMutex mutex_;
 public:
-  struct unit {};
-  using values_set_ptr = std::shared_ptr<folly::ConcurrentHashMap<folly::fbstring, unit>>;
   struct score_values {
     uint32_t score{};
-    values_set_ptr values{nullptr};
+    folly::F14ValueSet<folly::fbstring> values;
   };
-
-  struct score_values_less {
-    bool operator()(const score_values &lhs, const score_values &rhs) const { return lhs.score < rhs.score; }
-  };
-
-  using csl = folly::ConcurrentSkipList<score_values, score_values_less>;
 
   folly::ConcurrentHashMap<folly::fbstring, uint32_t> value_to_score_;
-  std::shared_ptr<csl> score_to_values_;
-
-  zset() : score_to_values_(csl::createInstance()) {}
+  boost::container::flat_map<uint32_t, folly::F14ValueSet<folly::fbstring>> score_to_values_;
 
   void zrmv(folly::fbstring const &value);
   void zadd(folly::fbstring const &value, uint32_t score);
