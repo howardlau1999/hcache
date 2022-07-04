@@ -30,7 +30,6 @@ ExternalProject_Add(folly_src
     URL ${CMAKE_CURRENT_LIST_DIR}/third_party/folly
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
-    PATCH_COMMAND ls -1 ./build/fbcode_builder/manifests/ | xargs -I {} sed -i s~https://github.com~https://ghproxy.com/https://github.com~ ./build/fbcode_builder/manifests/{}
     BUILD_COMMAND python3 ./build/fbcode_builder/getdeps.py --allow-system-packages --scratch-path ${CMAKE_CURRENT_BINARY_DIR}/folly build folly
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/folly/installed/folly/lib/libfolly.a"
@@ -62,13 +61,14 @@ target_link_libraries(storage folly Boost::boost)
 
 add_executable(hcache src/hcache.cc)
 add_executable(drogon-hcache src/drogon.cc)
+add_dependencies(storage rocksdb_src folly_src)
 add_dependencies(hcache rocksdb_src folly_src)
 add_dependencies(drogon-hcache rocksdb_src folly_src)
 target_link_libraries(hcache storage simdjson seastar glog::glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 target_link_libraries(drogon-hcache drogon storage simdjson seastar glog::glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
-add_executable(client src/client.cc)
-target_link_libraries(client seastar)
+add_executable(bench-client src/client.cc)
+target_link_libraries(bench-client seastar)
 
 add_executable(gendata src/gendata.cc)
 add_dependencies(gendata rocksdb_src)

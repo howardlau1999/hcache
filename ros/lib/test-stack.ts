@@ -9,7 +9,7 @@ const yumInstallPackages = `#!/bin/bash
   yum install -y ccache curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
 `
 
-const aptInstallPackages = `#!/bin/bash
+export const aptInstallPackages = `#!/bin/bash
    mv /etc/apt/sources.list /etc/apt/sources.list.bak  
       cat <<EOF > /etc/apt/sources.list
 deb http://mirrors.cloud.aliyuncs.com/debian/ testing main
@@ -17,24 +17,29 @@ deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
-      apt-get install -y ccache libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev >> ~/apt.log
+      apt-get install -y pkg-config ccache libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev >> ~/apt.log
       apt-get install -y build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev libssl3 >> ~/apt.log
       apt-get install -y liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev >> ~/apt.log
       apt-get autoremove -y
+      ln -s /usr/bin/ccache /usr/local/bin/gcc
+      ln -s /usr/bin/ccache /usr/local/bin/g++
 `
 
+export const installRust = `mkdir -p ~/.cargo
 
-const startupScriptFromCleanImage = `
-      mkdir -p ~/.cargo
-      cat <<EOF > ~/.cargo/config
+cat <<EOF > ~/.cargo/config
 [source.crates-io]
 replace-with = 'tuna'
 
 [source.tuna]
 registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 EOF
-      bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly && . $HOME/.cargo/env && cd /tmp && cargo install lazy_static" > ~/rustup.log & 
-      cat <<EOF | sudo tee -a /etc/security/limits.conf 
+
+bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly && . $HOME/.cargo/env && cd /tmp && cargo install lazy_static" > ~/rustup.log & 
+`
+
+export const adjustLimits = `
+cat <<EOF | sudo tee -a /etc/security/limits.conf 
 * hard memlock unlimited
 * soft memlock unlimited
 root hard nofile 1000000
@@ -42,7 +47,10 @@ root soft nofile 1000000
 * hard nofile 1000000
 * soft nofile 1000000
 EOF
-      cat <<EOF | sudo tee -a /etc/sysctl.conf
+`
+
+export const adjustSysctl = `
+cat <<EOF | sudo tee -a /etc/sysctl.conf
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
 net.ipv4.tcp_fin_timeout = 15
@@ -53,6 +61,13 @@ net.ipv4.tcp_sack = 1
 kernel.perf_event_paranoid = 1
 fs.aio-max-nr = 1048576
 EOF
+sysctl -p
+`
+
+const startupScriptFromCleanImage = `
+      ${installRust}
+      ${adjustLimits}
+      ${adjustSysctl}
 
         # 自动重启脚本
         cat <<EOF > ~/auto-restart.sh
@@ -68,11 +83,9 @@ EOF
 #!/bin/bash
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
-      ln -s /usr/bin/ccache /usr/local/bin/gcc
-      ln -s /usr/bin/ccache /usr/local/bin/g++
+
       chmod +x ~/start.sh
       chmod +x ~/auto-restart.sh
-      sysctl -p
       NOTIFY
       `;
 const imageAndStartScript = {
@@ -189,7 +202,8 @@ export class TestStack extends ros.Stack {
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
       instanceType: ecsInstanceType,
-      instanceName: 'hcahce-test-ecs',
+      instanceName: 'hcache-test-ecs',
+      hostName: 'hcache-build',
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
       spotStrategy: 'SpotAsPriceGo',

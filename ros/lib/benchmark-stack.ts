@@ -3,12 +3,16 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
+import { aptInstallPackages } from './test-stack';
 
 
 const imageAndStartScript = { 
   "custom": {
     imageId: process.env.HCACHE_IMAGE_ID,
     startScript: `#!/bin/bash
+    cat <<EOF > ~/.ssh/id_rsa
+SSH_PRIVATE_KEY
+EOF
     NOTIFY
     `,
   }
@@ -90,6 +94,11 @@ export class BenchmarkStack extends ros.Stack {
       publicKeyBody: pubKey,
       tags: [{ key: 'hcache', value: hostname() }],
     });
+    const serverKey = new ecs.SSHKeyPair(this, 'hcache-benchmark-server-key', {
+      keyPairName: `hcache-benchmark-server-key`,
+      tags: [{ key: 'hcache', value: 'benchmark' }],
+    });
+
 
     // 等待逻辑，用于等待 ECS 中应用安装完成
     const ecsWaitConditionHandle = new ROS.WaitConditionHandle(this, 'RosWaitConditionHandle', {
@@ -110,6 +119,7 @@ export class BenchmarkStack extends ros.Stack {
       securityGroupId: sg.attrSecurityGroupId,
       instanceType: ecsInstanceType,
       instanceName: 'hcache-benchmark-client',
+      hostName: 'benchmark-client',
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
       spotStrategy: 'SpotAsPriceGo',
@@ -117,17 +127,18 @@ export class BenchmarkStack extends ros.Stack {
       allocatePublicIp: true,
       internetMaxBandwidthOut: 1,
       internetChargeType: 'PayByTraffic',
-      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli }, specStartScript),
+      userData: ros.Fn.replace({ NOTIFY: ecsWaitConditionHandle.attrCurlCli, SSH_PRIVATE_KEY: serverKey.attrPrivateKeyBody }, specStartScript),
     });
 
     const serverInstance = new ecs.Instance(this, 'hcache-server', {
       vpcId: vpc.attrVpcId,
-      keyPairName: keyPair.attrKeyPairName,
+      keyPairName: serverKey.attrKeyPairName,
       vSwitchId: vswitch.attrVSwitchId,
       imageId: ecsImageId,
       securityGroupId: sg.attrSecurityGroupId,
       instanceType: 'ecs.g7.xlarge',
       instanceName: 'hcache-benchmark-server',
+      hostName: 'benchmark-server',
       systemDiskCategory: ecsSystemDiskCategory,
       password: ecsPassword,
       spotStrategy: 'SpotAsPriceGo',

@@ -3,6 +3,7 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
+import { aptInstallPackages } from './test-stack';
 
 export class DPDKStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
@@ -46,7 +47,7 @@ export class DPDKStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_efficiency",
+      defaultValue: "cloud_essd",
     });
 
     // 创建安全组开放端口
@@ -88,12 +89,13 @@ export class DPDKStack extends ros.Stack {
     const nics = [];
     for (let i = 0; i < serverCount; i++) {
       const serverInstance = new ecs.Instance(this, `hcache-dpdk-${i}`, {
+        hostName: `hcache-dpdk-node-${i}`,
         vpcId: ecsVpc.attrVpcId,
         keyPairName: serverKey.attrKeyPairName,
         vSwitchId: ecsvSwitch.attrVSwitchId,
         imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
         securityGroupId: sg.attrSecurityGroupId,
-        instanceType: ecsInstanceType,
+        instanceType: i === 0 ? 'ecs.c7.4xlarge' : ecsInstanceType,
         instanceName: `hcache-dpdk-${i}`,
         systemDiskCategory: ecsSystemDiskCategory,
         password: ecsPassword,
@@ -102,14 +104,13 @@ export class DPDKStack extends ros.Stack {
         allocatePublicIp: i === 0,
         internetMaxBandwidthOut: i === 0 ? 1 : 0,
         internetChargeType: 'PayByTraffic',
-        userData: ros.Fn.replace({ 
+        userData: ros.Fn.replace({
           NOTIFY: ecsWaitConditionHandle.attrCurlCli,
           SSH_PRIVATE_KEY: serverKey.attrPrivateKeyBody,
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y ccache libzstd-dev libdouble-conversion-dev libgoogle-glog-dev build-essential curl git libclang-dev htop nfs-common tmux linux-perf cmake libnuma-dev libssl-dev python3 python3-pyelftools meson ninja-build > ~/apt.log
+        ${aptInstallPackages}
+        apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build
         mkdir -p ~/.ssh
         cat <<EOF > ~/.ssh/id_rsa
 SSH_PRIVATE_KEY
@@ -118,6 +119,10 @@ EOF
     
 SSH_PUBLIC_KEY
 EOF
+        chmod 600 ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/authorized_keys
+        ln -s /usr/bin/ccache /usr/bin/gcc
+        ln -s /usr/bin/ccache /usr/bin/g++
       NOTIFY
         `),
       });
@@ -133,10 +138,22 @@ EOF
       servers.push(serverInstance);
       nics.push(nic);
     }
+    const hostsCommand = new ecs.RunCommand(this, 'hcache-dpdk-hosts', {
+      commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', servers.map((server, i) => `${server.attrPrivateIp} node-${i} ${server.attrHostName}`)) }, `
+      cat <<EOF > /root/servers
+SERVERS
+EOF
+      ssh-keyscan -H -f /root/servers >> ~/.ssh/known_hosts
+      cat /root/servers >> /etc/hosts
+      `),
+      type: 'RunShellScript',
+      instanceIds: servers.map((server) => server.attrInstanceId),
+    });
+    hostsCommand.addDependency(ecsWaitCondition);
 
     new ros.RosOutput(this, 'instance_id', { value: servers.map((server) => server.attrInstanceId) });
     new ros.RosOutput(this, 'private_ip', { value: servers.map((server) => server.attrPrivateIp) });
     new ros.RosOutput(this, 'nic_ip', { value: nics.map((nic) => nic.attrPrivateIpAddress) });
-    new ros.RosOutput(this, 'public_ip', { value: servers.map((server) => server.attrPublicIp) });
+    new ros.RosOutput(this, 'public_ip', { value: servers[0].attrPublicIp });
   }
 }
