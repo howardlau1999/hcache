@@ -10,5 +10,5 @@ URL="https://${USERNAME}:${PASSWORD}@github.com/howardlau1999/hcache"
 if [ -d hcache ]; then \
 cd hcache && git fetch origin && git checkout $BRANCH && git pull --rebase $URL $BRANCH ;\
 else \
-git clone --recursive $URL && cd hcache && git checkout $BRANCH ;\
+git clone --recurse-submodules -j8 $URL && cd hcache && git checkout $BRANCH ;\
 fi"

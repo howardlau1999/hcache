@@ -156,7 +156,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c7.xlarge",
+      defaultValue: "ecs.c7.4xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -164,7 +164,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_efficiency",
+      defaultValue: "cloud_essd",
     });
 
     // 创建安全组开放端口
