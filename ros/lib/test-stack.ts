@@ -17,9 +17,14 @@ deb-src http://mirrors.cloud.aliyuncs.com/debian/ testing main
 EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
-      apt-get install -y pkg-config ccache libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev >> ~/apt.log
-      apt-get install -y build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev libssl3 >> ~/apt.log
-      apt-get install -y liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev >> ~/apt.log
+      while true; do
+        apt-get install -y pkg-config ccache libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
+          build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev libssl3 \
+          liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev >> ~/apt.log
+        if [ $? -eq 0 ]; then
+          break
+        fi
+      done
       apt-get autoremove -y
       ln -s /usr/bin/ccache /usr/local/bin/gcc
       ln -s /usr/bin/ccache /usr/local/bin/g++

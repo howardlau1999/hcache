@@ -21,6 +21,7 @@ class zset {
   folly::SharedMutex mutex_;
 public:
   struct score_values {
+    score_values(uint32_t score, folly::F14ValueSet<folly::fbstring> values) : score(score), values(values)  {}
     uint32_t score{};
     folly::F14ValueSet<folly::fbstring> values;
   };

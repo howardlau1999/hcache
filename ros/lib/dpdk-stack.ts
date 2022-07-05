@@ -23,11 +23,19 @@ export class DPDKStack extends ros.Stack {
     });
 
     // 构建 VSwitch
-    const ecsvSwitch = new ecs.VSwitch(this, 'hcache-dpdk-vswitch', {
+    // 控制平面
+    const controlSwitch = new ecs.VSwitch(this, 'hcache-dpdk-control-vswitch', {
       vpcId: ecsVpc.attrVpcId,
       zoneId: zoneId,
-      vSwitchName: 'hcache-dpdk-vswitch',
+      vSwitchName: 'hcache-dpdk-control-vswitch',
       cidrBlock: '192.168.1.0/24',
+    });
+    // 数据平面
+    const dataSwitch = new ecs.VSwitch(this, 'hcache-dpdk-data-vswitch', {
+      vpcId: ecsVpc.attrVpcId,
+      zoneId: zoneId,
+      vSwitchName: 'hcache-dpdk-data-vswitch',
+      cidrBlock: '192.168.2.0/24',
     });
 
     // 指定系统镜像、系统密码、实例类型
@@ -85,14 +93,14 @@ export class DPDKStack extends ros.Stack {
       count: serverCount
     });
 
-    const servers = [];
-    const nics = [];
+    const servers: ecs.Instance[] = [];
+    const nics: ecs.NetworkInterface[] = [];
     for (let i = 0; i < serverCount; i++) {
       const serverInstance = new ecs.Instance(this, `hcache-dpdk-${i}`, {
         hostName: `hcache-dpdk-node-${i}`,
         vpcId: ecsVpc.attrVpcId,
         keyPairName: serverKey.attrKeyPairName,
-        vSwitchId: ecsvSwitch.attrVSwitchId,
+        vSwitchId: controlSwitch.attrVSwitchId,
         imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
         securityGroupId: sg.attrSecurityGroupId,
         instanceType: i === 0 ? 'ecs.c7.4xlarge' : ecsInstanceType,
@@ -110,7 +118,7 @@ export class DPDKStack extends ros.Stack {
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
         ${aptInstallPackages}
-        apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build
+        apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build distcc
         mkdir -p ~/.ssh
         cat <<EOF > ~/.ssh/id_rsa
 SSH_PRIVATE_KEY
@@ -123,11 +131,13 @@ EOF
         chmod 600 ~/.ssh/authorized_keys
         ln -s /usr/bin/ccache /usr/bin/gcc
         ln -s /usr/bin/ccache /usr/bin/g++
+        ln -s /usr/bin/ccache /usr/bin/c++
+        ln -s /usr/bin/ccache /usr/bin/cc
       NOTIFY
         `),
       });
       const nic = new ecs.NetworkInterface(this, `hcache-dpdk-nic-${i}`, {
-        vSwitchId: ecsvSwitch.attrVSwitchId,
+        vSwitchId: dataSwitch.attrVSwitchId,
         networkInterfaceName: `hcache-dpdk-nic-${i}`,
         securityGroupId: sg.attrSecurityGroupId,
       });
@@ -138,17 +148,45 @@ EOF
       servers.push(serverInstance);
       nics.push(nic);
     }
-    const hostsCommand = new ecs.RunCommand(this, 'hcache-dpdk-hosts', {
+    const hostsCommand = new ecs.RunCommand(this, 'hcache-control-hosts', {
       commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', servers.map((server, i) => `${server.attrPrivateIp} node-${i} ${server.attrHostName}`)) }, `
       cat <<EOF > /root/servers
 SERVERS
 EOF
       ssh-keyscan -H -f /root/servers >> ~/.ssh/known_hosts
       cat /root/servers >> /etc/hosts
+      awk '{ print $1 }' /root/servers > /etc/distcc/hosts
       `),
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),
     });
+    const dpdkHostsCommand = new ecs.RunCommand(this, 'hcache-dpdk-hosts', {
+      commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', nics.map((nic, i) => `${nic.attrPrivateIpAddress} dpdk-${i}`)) }, `
+      cat <<EOF > /root/dpdk-servers
+SERVERS
+EOF
+      cat /root/dpdk-servers >> /etc/hosts
+      `),
+      type: 'RunShellScript',
+      instanceIds: servers.map((server) => server.attrInstanceId),
+    });
+    servers.forEach((server, i) => {
+      const distccCommand = new ecs.RunCommand(this, `hcache-distcc-setup-${i}`, { 
+        commandContent: `
+        cat <<EOF > /etc/default/distcc
+STARTDISTCC="true"
+ALLOWEDNETS="${controlSwitch.attrCidrBlock}"
+LISTENER="${server.attrPrivateIp}"
+EOF
+        systemctl enable distcc
+        systemctl restart distcc
+        `,
+        type: 'RunShellScript',
+        instanceIds: [server.attrInstanceId],
+      });
+      distccCommand.addDependency(ecsWaitCondition);
+    });
+    dpdkHostsCommand.addDependency(ecsWaitCondition);
     hostsCommand.addDependency(ecsWaitCondition);
 
     new ros.RosOutput(this, 'instance_id', { value: servers.map((server) => server.attrInstanceId) });
