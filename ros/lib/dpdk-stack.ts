@@ -127,7 +127,7 @@ ip link set eth0 down
 modprobe uio
 modprobe uio_pci_generic
 ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic eth0
-nohup hcache --reserve-memory 512M --dpdk-pmd --network-stack native 2>&1 &
+hcache --reserve-memory 512M --dpdk-pmd --network-stack native
 EOF
         chmod +x ~/do-start.sh
         cat <<EOF > ~/start.sh
@@ -162,7 +162,7 @@ EOF
       nics.push(nic);
     }
     const hostsCommand = new ecs.RunCommand(this, 'hcache-control-hosts', {
-      commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', servers.map((server, i) => `${server.attrPrivateIp} node-${i} ${server.attrHostName}`)) }, `
+      commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', servers.map((server, i) => `${server.attrPrivateIp} node-${i}`)) }, `
       cat <<EOF > /root/servers
 SERVERS
 EOF
@@ -173,6 +173,42 @@ EOF
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),
     });
+
+    const dpdkDownloadConditionHandle = new ROS.WaitConditionHandle(this, 'DPDKDownloadHandle', {
+      count: 1
+    });
+    const dpdkDownloadWaitCondition = new ROS.WaitCondition(this, 'DPDKDownloadWaitCondition', {
+      timeout: 600,
+      handle: ros.Fn.ref('DPDKDownloadHandle'),
+      count: 1
+    });
+    const dpdkDownloadCommand = new ecs.RunCommand(this, 'hcache-control-dpdk-download', {
+      commandContent: ros.Fn.replace({
+        OTHER_SERVERS: servers.slice(1).map((_, i) => `node-${i}`),
+        NOTIFY: dpdkDownloadConditionHandle.attrCurlCli
+      }, `
+      curl -o /root/dpdk-22.03.tar.xz -L https://howardlau.me/static/dpdk-22.03.tar.xz
+      for server in OTHER_SERVERS; do
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /root/dpdk-22.03.tar.xz \${server}:/root/dpdk-22.03.tar.xz &
+      done
+      wait
+      NOTIFY
+      `),
+      type: 'RunShellScript',
+      instanceIds: servers[0].attrInstanceId,
+    });
+    dpdkDownloadCommand.addDependency(ecsWaitCondition);
+
+    const dpdkSetupCommand = new ecs.RunCommand(this, 'hcache-dpdk-setup', {
+      commandContent: `
+      tar -C /root -xJf /root/dpdk-22.03.tar.xz
+      bash -c "cd /root/dpdk-22.03 && meson -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
+      `,
+      type: 'RunShellScript',
+      instanceIds: servers.map((server) => server.attrInstanceId),
+    });
+    dpdkSetupCommand.addDependency(dpdkDownloadWaitCondition);
+
     const dpdkHostsCommand = new ecs.RunCommand(this, 'hcache-dpdk-hosts', {
       commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', nics.map((nic, i) => `${nic.attrPrivateIpAddress} dpdk-${i}`)) }, `
       cat <<EOF > /root/dpdk-servers
@@ -184,7 +220,7 @@ EOF
       instanceIds: servers.map((server) => server.attrInstanceId),
     });
     servers.forEach((server, i) => {
-      const distccCommand = new ecs.RunCommand(this, `hcache-distcc-setup-${i}`, { 
+      const distccCommand = new ecs.RunCommand(this, `hcache-distcc-setup-${i}`, {
         commandContent: `
         cat <<EOF > /etc/default/distcc
 STARTDISTCC="true"

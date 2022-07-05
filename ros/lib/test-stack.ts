@@ -156,7 +156,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c6.xlarge",
+      defaultValue: "ecs.c7.xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
