@@ -47,7 +47,7 @@ export class DPDKStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c6.xlarge",
+      defaultValue: "ecs.c7.xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -131,8 +131,6 @@ EOF
         chmod 600 ~/.ssh/authorized_keys
         ln -s /usr/bin/ccache /usr/bin/gcc
         ln -s /usr/bin/ccache /usr/bin/g++
-        ln -s /usr/bin/ccache /usr/bin/c++
-        ln -s /usr/bin/ccache /usr/bin/cc
       NOTIFY
         `),
       });
@@ -155,7 +153,7 @@ SERVERS
 EOF
       ssh-keyscan -H -f /root/servers >> ~/.ssh/known_hosts
       cat /root/servers >> /etc/hosts
-      awk '{ print $1 }' /root/servers > /etc/distcc/hosts
+      awk ORS=" " '{ print $1 }' /root/servers > /root/.distcc/hosts
       `),
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),
