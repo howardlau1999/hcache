@@ -120,6 +120,21 @@ export class DPDKStack extends ros.Stack {
         ${aptInstallPackages}
         apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build distcc
         mkdir -p ~/.ssh
+        cat <<EOF > ~/do-start.sh
+        #!/bin/bash
+export INIT_DIR=/data
+ip link set eth0 down
+modprobe uio
+modprobe uio_pci_generic
+~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic eth0
+nohup hcache --reserve-memory 512M --dpdk-pmd --network-stack native 2>&1 &
+EOF
+        chmod +x ~/do-start.sh
+        cat <<EOF > ~/start.sh
+        #!/bin/bash
+nohup ~/do-start.sh &
+EOF
+        chmod +x ~/start.sh
         cat <<EOF > ~/.ssh/id_rsa
 SSH_PRIVATE_KEY
 EOF
