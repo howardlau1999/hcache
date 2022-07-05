@@ -121,7 +121,7 @@ export class DPDKStack extends ros.Stack {
         apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build distcc
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh
-        #!/bin/bash
+#!/bin/bash
 export INIT_DIR=/data
 ip link set eth0 down
 modprobe uio
@@ -131,7 +131,7 @@ nohup hcache --reserve-memory 512M --dpdk-pmd --network-stack native 2>&1 &
 EOF
         chmod +x ~/do-start.sh
         cat <<EOF > ~/start.sh
-        #!/bin/bash
+#!/bin/bash
 nohup ~/do-start.sh &
 EOF
         chmod +x ~/start.sh
