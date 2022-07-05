@@ -62,7 +62,7 @@
 
 ## Change Log
 
-- **2022.07.05(howard)**: Seastar 移植 DPDK OK 了，主要是修改了一些 assert 失败，特别是 IP RX Checksum Offload，/init 接口压测有 80w QPS，但是提交上去得分很低：score:1956.5297, init_score:5.0000, api_score:630.0000, qps_score:1321.4797, delay_score:0.0500，不过既然出分了，说明全部流程都跑通了，后面就是看看哪里有 BUG
+- **2022.07.05(howard)**: Seastar 移植 DPDK OK 了，主要是修改了一些 assert 失败，特别是 IP RX Checksum Offload，`/init` 接口压测有 80w QPS，但是提交上去得分很低：score:1956.5297, init_score:5.0000, api_score:630.0000, qps_score:1321.4797, delay_score:0.0500，不过既然出分了，说明全部流程都跑通了，后面就是看看哪里有 BUG （目前初步定位是 `/batch` 接口）
 - **2022.07.04(howard)**: Seastar 打开 `poll-mode` 和保留 512 MB 内存给 OS 之后终于出分了，也是很低分，可能是 zset 或者 KV 实现有问题，两个框架都这么低分，score:1621.3732, init_score:10.0000, api_score:630.0000, qps_score:981.3232, delay_score:0.0500。将 zset 改成简单的读写锁同步之后，分数正常了，用 Drogon 跑出来 score:17174.6697, init_score:10.0000, api_score:630.0000, qps_score:13399.2530, delay_score:3135.4167
 - **2022.07.03(howard)**: C++ 还是没能跑起来，还是说 ROS 创建失败，搞不懂了。今天用 `/init` 接口裸测了不同框架的 QPS，用的是 Seastar 提供的 Client 模板。在一个 8 核虚拟机，用 `taskset` 指定其中四个核跑服务器，另外四个跑客户端。
   - Rust:
