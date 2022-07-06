@@ -134,6 +134,7 @@ if [ $? == 0 ]; then
   ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic $IFACE
 fi
 hcache --reserve-memory 512M --dpdk-pmd --network-stack native --task-quota-ms 10
+EOF
         chmod +x ~/do-start.sh
         cat <<EOF > ~/start.sh
 #!/bin/bash
