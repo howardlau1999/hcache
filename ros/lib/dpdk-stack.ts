@@ -122,16 +122,16 @@ export class DPDKStack extends ros.Stack {
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh
 #!/bin/bash
-IFACE=eth0
+IFACE=\\\${IFACE:-eth0}
 export INIT_DIR=/data
 mkdir -p /dev/hugepages
 mountpoint -q /dev/hugepages || mount -t hugetlbfs nodev /dev/hugepages
 echo 512 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-ip link set $IFACE down
-if [ $? == 0 ]; then
+ip link set \\\$IFACE down
+if [ \\\$? == 0 ]; then
   modprobe uio
   modprobe uio_pci_generic
-  ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic $IFACE
+  ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic \\\$IFACE
 fi
 hcache --reserve-memory 512M --dpdk-pmd --network-stack native --task-quota-ms 10
 EOF

@@ -119,9 +119,9 @@ EOF
 #!/bin/bash
 modprobe -rv ip_tables
 dhclient -x -pf /var/run/dhclient-eth0.pid
-ip addr change $( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print $2 " brd " $4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
-export TXQUEUES=($(ls -1qdv /sys/class/net/eth0/queues/tx-*))
-for i in \${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \${TXQUEUES[i]}/xps_cpus; done;
+ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print $2 " brd " $4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
+export TXQUEUES=(\\$(ls -1qdv /sys/class/net/eth0/queues/tx-*))
+for i in \\\${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \\\${TXQUEUES[i]}/xps_cpus; done;
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
 
