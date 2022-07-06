@@ -33,7 +33,6 @@ endif()
 
 find_package(ZLIB)
 find_package(Boost)
-find_package(glog)
 find_package(Threads)
 add_subdirectory(third_party/seastar)
 add_subdirectory(third_party/simdjson)
@@ -51,11 +50,11 @@ target_link_libraries(storage folly Boost::boost)
 
 add_executable(hcache src/hcache.cc)
 add_dependencies(hcache rocksdb_src)
-target_link_libraries(hcache storage simdjson seastar glog::glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+target_link_libraries(hcache storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
 add_executable(drogon-hcache src/drogon.cc)
 add_dependencies(drogon-hcache rocksdb_src)
-target_link_libraries(drogon-hcache drogon storage simdjson seastar glog::glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+target_link_libraries(drogon-hcache drogon storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
 add_executable(bench-client src/client.cc)
 target_link_libraries(bench-client seastar)
