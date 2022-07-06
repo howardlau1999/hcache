@@ -55,6 +55,7 @@ folly::Optional<folly::fbstring> storage::get_value_by_key(folly::fbstring &&key
 }
 
 void storage::add_key_value(folly::fbstring const &key, folly::fbstring const &value) {
+  kv_.erase(key);
   kv_.emplace(key, value);
   zsets_.erase(key);
 }

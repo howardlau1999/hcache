@@ -1,8 +1,8 @@
 use hyper::{client::HttpConnector, Body, Client, Method, Request, StatusCode};
 mod dto;
-use dto::{InsrtRequest};
+use dto::InsrtRequest;
 use lazy_static::lazy_static;
-use tokio::time::Instant;
+use tokio::{sync::Semaphore, io::AsyncWriteExt};
 
 lazy_static! {
     pub static ref HOST: String = {
@@ -33,31 +33,44 @@ async fn batch(kvs: Vec<InsrtRequest>) -> Result<(), ()> {
     }
 }
 
-
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> ! {
     // Benchmark add
-    let n: usize =
-        std::env::var("N").map_or(10000, |value| value.parse::<usize>().unwrap_or(10000));
+    let n: usize = std::env::var("N").map_or(100, |value| value.parse::<usize>().unwrap_or(100));
+    let sema = std::sync::Arc::new(Semaphore::new(n));
 
-    // Benchmark batch
-    let kvs: Vec<InsrtRequest> = (0..n)
+    let chunk: Vec<_> = (0..1000)
         .map(|i| InsrtRequest {
             key: format!("key{}", i).repeat(16),
             value: String::from_iter(std::iter::repeat('a').take(1024)),
         })
         .collect();
-    let tik = Instant::now();
-    let mut handles = vec![];
-    for chunk in kvs.chunks(1000) {
-        handles.push(tokio::spawn(batch(chunk.to_vec())));
+    let mut counter = 0;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<tokio::time::Duration>();
+    tokio::spawn(async move {
+        let mut opts = tokio::fs::OpenOptions::new();
+        opts.create(true).write(true);
+        let mut data = opts.open("req.txt").await.unwrap();
+        while let Some(d) = rx.recv().await {
+            data.write_all(format!("{}\n", d.as_nanos()).as_bytes()).await.unwrap();
+        }
+    });
+    let mut prev = tokio::time::Instant::now();
+    loop {
+        sema.acquire().await.unwrap().forget();
+        let sema = sema.clone();
+        counter += 1;
+        let chunk = chunk.clone();
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let ins = tokio::time::Instant::now();
+            let _ = batch(chunk).await;
+            sema.add_permits(1);
+            tx.send(ins.elapsed()).unwrap();
+        });
+        if counter % 1000 == 0 {
+            println!("{} {:?}", counter, prev.elapsed());
+            prev = tokio::time::Instant::now();
+        }
     }
-    for handle in handles {
-        handle.await.unwrap().unwrap();
-    }
-    let tok = Instant::now();
-    let batch_duration = tok.duration_since(tik);
-    println!("N: {} batch_duration: {:?}", n, batch_duration);
-
-    Ok(())
 }
