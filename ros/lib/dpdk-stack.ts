@@ -3,7 +3,7 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
-import { aptInstallPackages, disableSpectre } from './test-stack';
+import { aptInstallPackages, disableSpectre, dnfInstallPackages } from './test-stack';
 
 export class DPDKStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
@@ -101,7 +101,7 @@ export class DPDKStack extends ros.Stack {
         vpcId: ecsVpc.attrVpcId,
         keyPairName: serverKey.attrKeyPairName,
         vSwitchId: controlSwitch.attrVSwitchId,
-        imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
+        imageId: "fedora_35_x64_20G_alibase_20220531.vhd",
         securityGroupId: sg.attrSecurityGroupId,
         instanceType: i === 0 ? 'ecs.c7.4xlarge' : ecsInstanceType,
         instanceName: `hcache-dpdk-${i}`,
@@ -117,7 +117,7 @@ export class DPDKStack extends ros.Stack {
           SSH_PRIVATE_KEY: serverKey.attrPrivateKeyBody,
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
-        ${aptInstallPackages}
+        ${dnfInstallPackages}
         ${disableSpectre}
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh

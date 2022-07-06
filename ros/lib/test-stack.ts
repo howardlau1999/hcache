@@ -4,9 +4,9 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
 
-const dnfInstallPackages = `#!/bin/bash
+export const dnfInstallPackages = `#!/bin/bash
   dnf update -y
-  dnf -y install gcc-c++    ninja-build    ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
+  dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build    ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
     valgrind-devel git ccache curl make gcc cmake clang-devel htop nfs-utils tmux openssl-devel perf hwloc-devel\
     numactl-devel  libpciaccess-devel    cryptopp-devel    libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel\
     liburing-devel  meson    python3    python3-pyelftools   systemtap-sdt-devel   libtool    yaml-cpp-devel    c-ares-devel    stow\
@@ -83,17 +83,20 @@ sysctl -p
 `
 
 export const uninstallAegis = `
-curl -LO http://update.aegis.aliyun.com/download/uninstall.sh
-chmod +x uninstall.sh
-./uninstall.sh
-curl -LO http://update.aegis.aliyun.com/download/quartz_uninstall.sh
-chmod +x quartz_uninstall.sh
-./quartz_uninstall.sh
+# curl -LO http://update.aegis.aliyun.com/download/uninstall.sh
+# chmod +x uninstall.sh
+# ./uninstall.sh
+# curl -LO http://update.aegis.aliyun.com/download/quartz_uninstall.sh
+# chmod +x quartz_uninstall.sh
+# ./quartz_uninstall.sh
 `
 
 export const disableSpectre = `
-sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off intel_iommu=on /'  /etc/default/grub
+sed -i 's/^GRUB_CMDLINE_LINUX="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off intel_iommu=on /'  /etc/default/grub
 update-grub
+if [ $? -ne 0 ]; then
+  grub2-mkconfig -o /boot/grub2/grub.cfg
+fi
 `
 
 const startupScriptFromCleanImage = `
