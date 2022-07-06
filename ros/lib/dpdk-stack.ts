@@ -195,7 +195,7 @@ EOF
       NOTIFY
       `),
       type: 'RunShellScript',
-      instanceIds: servers[0].attrInstanceId,
+      instanceIds: [servers[0].attrInstanceId],
     });
     dpdkDownloadCommand.addDependency(ecsWaitCondition);
 
