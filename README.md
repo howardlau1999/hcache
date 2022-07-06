@@ -62,7 +62,7 @@
 
 ## Change Log
 
-- **2022.07.06(howard)**: DPDK 还是没有跑通，分数还是很低，score:1928.2548, init_score:3.3333, api_score:630.0000, qps_score:1294.8714, delay_score:0.0500。而且普通的 Seastar 也跑不通了，开了 `poll-mode` 也不行，非常玄学。重新交了一次 Drogon，score:16494.7257, init_score:10.0000, api_score:630.0000, qps_score:13574.4227, delay_score:2280.3030。改了一下[内核参数和一些网卡调优](https://talawah.io/blog/linux-kernel-vs-dpdk-http-performance-showdown/)，用 Rust 跑 score:17225.0448, init_score:5.0000, api_score:630.0000, qps_score:14081.7115, delay_score:2508.3333。QPS 应该是跑出来最高的了，说明优化还是有一点用的，但是为什么 delay_score 拉胯了。
+- **2022.07.06(howard)**: DPDK 还是没有跑通，分数还是很低，score:1928.2548, init_score:3.3333, api_score:630.0000, qps_score:1294.8714, delay_score:0.0500。而且普通的 Seastar 也跑不通了，开了 `poll-mode` 也不行，非常玄学。重新交了一次 Drogon，score:16494.7257, init_score:10.0000, api_score:630.0000, qps_score:13574.4227, delay_score:2280.3030。改了一下[内核参数和一些网卡调优](https://talawah.io/blog/linux-kernel-vs-dpdk-http-performance-showdown/)，作者还在另外一篇博客提到怎么[优化 HTTP 服务器](https://talawah.io/blog/extreme-http-performance-tuning-one-point-two-million/)以及[相关的 AWS CloudFormation 脚本](https://gist.github.com/talawahtech/ce2fe1f6a3e3851d15e912e0a4e93734)。用改后的内核参数 Rust 跑 score:17225.0448, init_score:5.0000, api_score:630.0000, qps_score:14081.7115, delay_score:2508.3333。QPS 应该是跑出来最高的了，说明优化还是有一点用的，但是为什么 delay_score 拉胯了。
 - **2022.07.05(howard)**: Seastar 移植 DPDK OK 了，主要是修改了一些 assert 失败，特别是 IP RX Checksum Offload，`/init` 接口压测有 80w QPS，但是提交上去得分很低：score:1956.5297, init_score:5.0000, api_score:630.0000, qps_score:1321.4797, delay_score:0.0500，不过既然出分了，说明全部流程都跑通了，后面就是看看哪里有 BUG （目前初步定位是 `/batch` 接口，感觉是 DPDK 的锅，就算接口什么都不做延迟也很高，应该是收大报文有问题，那为啥 `/list` 就正常呢）
 - **2022.07.04(howard)**: Seastar 打开 `poll-mode` 和保留 512 MB 内存给 OS 之后终于出分了，也是很低分，可能是 zset 或者 KV 实现有问题，两个框架都这么低分，score:1621.3732, init_score:10.0000, api_score:630.0000, qps_score:981.3232, delay_score:0.0500。将 zset 改成简单的读写锁同步之后，分数正常了，用 Drogon 跑出来 score:17174.6697, init_score:10.0000, api_score:630.0000, qps_score:13399.2530, delay_score:3135.4167
 - **2022.07.03(howard)**: C++ 还是没能跑起来，还是说 ROS 创建失败，搞不懂了。今天用 `/init` 接口裸测了不同框架的 QPS，用的是 Seastar 提供的 Client 模板。在一个 8 核虚拟机，用 `taskset` 指定其中四个核跑服务器，另外四个跑客户端。
@@ -103,7 +103,7 @@
 
 ```bash
 # Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly && . $HOME/.cargo/env
 ```
 
 配置清华源，将下面的内容保存到 `~/.cargo/config`
@@ -120,7 +120,7 @@ registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
 
 ### C++
 
-先运行 `./get-cpp-deps.sh` 安装 C++ 相关依赖，然后运行 `./build-cpp.sh` 来编译。
+先 `root` 运行 `./get-cpp-deps.sh` 安装 C++ 相关依赖，然后运行 `./build-cpp.sh` 来编译。
 
 ### 阿里云命令行工具
 
