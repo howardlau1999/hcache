@@ -16,3 +16,7 @@ tokio = { version = "1", features = ["full"] }
 [[bin]]
 name = "client"
 path = "src/client.rs"
+
+[[bin]]
+name = "batch-forever"
+path = "src/batch-forever.rs"

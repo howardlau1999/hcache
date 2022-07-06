@@ -184,7 +184,7 @@ EOF
     });
     const dpdkDownloadCommand = new ecs.RunCommand(this, 'hcache-control-dpdk-download', {
       commandContent: ros.Fn.replace({
-        OTHER_SERVERS: servers.slice(1).map((_, i) => `node-${i}`),
+        OTHER_SERVERS: ros.Fn.join(' ', servers.slice(1).map((server) => `${server.attrPrivateIp}`)),
         NOTIFY: dpdkDownloadConditionHandle.attrCurlCli
       }, `
       curl -o /root/dpdk-22.03.tar.xz -L https://howardlau.me/static/dpdk-22.03.tar.xz
