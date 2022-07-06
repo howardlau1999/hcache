@@ -35,6 +35,7 @@ public:
         , _reqs_per_conn(reqs_per_conn)
         , _run_timer([this] { _timer_done = true; })
         , _timer_based(reqs_per_conn == 0) {
+
     }
 
     class connection {
@@ -45,12 +46,30 @@ public:
         http_response_parser _parser;
         http_client* _http_client;
         uint64_t _nr_done{0};
+        std::string batch_request;
     public:
         connection(connected_socket&& fd, http_client* client)
             : _fd(std::move(fd))
             , _read_buf(_fd.input())
             , _write_buf(_fd.output())
-            , _http_client(client){
+            , _http_client(client) {
+            std::string batch_request_json_body;
+            batch_request_json_body = "[";
+            for (int i = 0; i < 5000; ++i) {
+                char key[16];
+                char value[256];
+                memset(value, 'a', 256);
+                sprintf(key, "%d", i);
+                char comma = i ? ',' : ' ';
+                batch_request_json_body.push_back(comma);
+                batch_request_json_body += "{\"key\":\"";
+                batch_request_json_body += key;
+                batch_request_json_body += "\",\"value\":\"";
+                batch_request_json_body += value;
+                batch_request_json_body += "\"}";
+            }
+            batch_request_json_body = "]";
+            batch_request = fmt::format("GET /init HTTP/1.1\r\nContent-Length: {}\r\nHost: 127.0.0.1:10000\r\n\r\n{}", batch_request_json_body.size(), batch_request_json_body);
         }
 
         uint64_t nr_done() {
@@ -58,7 +77,7 @@ public:
         }
 
         future<> do_req() {
-            return _write_buf.write("GET /init HTTP/1.1\r\nHost: 127.0.0.1:10000\r\n\r\n").then([this] {
+            return _write_buf.write(batch_request).then([this] {
                 return _write_buf.flush();
             }).then([this] {
                 _parser.init();
