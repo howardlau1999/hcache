@@ -4,9 +4,18 @@ import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
 
+const dnfInstallPackages = `#!/bin/bash
+  dnf update -y
+  dnf -y install gcc-c++    ninja-build    ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
+    valgrind-devel git ccache curl make gcc cmake clang-devel htop nfs-utils tmux openssl-devel perf hwloc-devel\
+    numactl-devel  libpciaccess-devel    cryptopp-devel    libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel\
+    liburing-devel  meson    python3    python3-pyelftools   systemtap-sdt-devel   libtool    yaml-cpp-devel    c-ares-devel    stow\
+    diffutils    doxygen    openssl    fmt-devel    boost-devel    valgrind-devel libtool-ltdl-devel trousers-devel libidn2-devel libunistring-devel > ~/dnf.log
+` 
+
 const yumInstallPackages = `#!/bin/bash
   yum makecache --refresh
-  yum install -y ccache curl make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
+  yum install -y ccache curl cmake make g++ gcc git clang-devel htop nfs-utils tmux openssl-devel perf > ~/yum.log
 `
 
 export const aptInstallPackages = `#!/bin/bash
@@ -18,7 +27,7 @@ EOF
       export DEBIAN_FRONTEND=noninteractive
       apt-get update 
       while true; do
-        apt-get install -y pkg-config ccache libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
+        apt-get install -y pkg-config ccache python3-pyelftools meson libpcap-dev ninja-build distcc libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
           build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux linux-perf cmake libssl-dev libssl3 \
           liburing-dev libxml2-dev libyaml-cpp-dev libc-ares-dev libfmt-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev >> ~/apt.log
         if [ $? -eq 0 ]; then
@@ -56,6 +65,10 @@ EOF
 
 export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
+vm.dirty_ratio=80
+net.core.busy_poll=1
+net.core.default_qdisc=noqueue
+net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
 net.ipv4.tcp_fin_timeout = 15
@@ -69,15 +82,30 @@ EOF
 sysctl -p
 `
 
+export const uninstallAegis = `
+curl -LO http://update.aegis.aliyun.com/download/uninstall.sh
+chmod +x uninstall.sh
+./uninstall.sh
+curl -LO http://update.aegis.aliyun.com/download/quartz_uninstall.sh
+chmod +x quartz_uninstall.sh
+./quartz_uninstall.sh
+`
+
+export const disableSpectre = `
+sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off intel_iommu=on /'  /etc/default/grub
+update-grub
+`
+
 const startupScriptFromCleanImage = `
       ${installRust}
       ${adjustLimits}
       ${adjustSysctl}
+      ${uninstallAegis}
+      ${disableSpectre}
 
         # 自动重启脚本
         cat <<EOF > ~/auto-restart.sh
 #!/bin/bash
-ulimit -n 1000000
 export INIT_DIR=/data
 while true; do
   /usr/bin/hcache --poll-mode --reserve-memory 512M --max-networking-io-control-blocks 50000
@@ -86,6 +114,11 @@ EOF
         # 启动脚本
         cat <<EOF > ~/start.sh
 #!/bin/bash
+modprobe -rv ip_tables
+dhclient -x -pf /var/run/dhclient-eth0.pid
+ip addr change $( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print $2 " brd " $4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
+export TXQUEUES=($(ls -1qdv /sys/class/net/eth0/queues/tx-*))
+for i in \${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \${TXQUEUES[i]}/xps_cpus; done;
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
 
@@ -104,6 +137,12 @@ const imageAndStartScript = {
     ${startupScriptFromCleanImage}`,
     imageId: "debian_11_3_x64_20G_alibase_20220531.vhd",
   },
+  "fedora": {
+    imageId: "fedora_35_x64_20G_alibase_20220531.vhd",
+    startScript: `${dnfInstallPackages}
+    ${startupScriptFromCleanImage}
+    `
+  },
   "custom": {
     imageId: "m-2ze6tbibqok06pny2wx3",
     startScript: `#!/bin/bash
@@ -119,8 +158,8 @@ export class TestStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 指定使用的镜像和启动脚本
-    const fromWhich = "debian";
-    const spec = imageAndStartScript[fromWhich];
+    const fromWhich = process.env.IMAGE_FROM || "debian";
+    const spec = (imageAndStartScript as any)[fromWhich];
     const specImageId = spec.imageId;
     const specStartScript = spec.startScript;
 

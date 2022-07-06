@@ -3,7 +3,7 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
-import { aptInstallPackages } from './test-stack';
+import { aptInstallPackages, disableSpectre } from './test-stack';
 
 export class DPDKStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
@@ -118,7 +118,7 @@ export class DPDKStack extends ros.Stack {
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
         ${aptInstallPackages}
-        apt-get install -y python3-pyelftools libnuma-dev meson libpcap-dev ninja-build distcc
+        ${disableSpectre}
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh
 #!/bin/bash
@@ -133,7 +133,7 @@ if [ $? == 0 ]; then
   modprobe uio_pci_generic
   ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic $IFACE
 fi
-hcache --reserve-memory 512M --dpdk-pmd --network-stack native
+hcache --reserve-memory 512M --dpdk-pmd --network-stack native --task-quota-ms 10
         chmod +x ~/do-start.sh
         cat <<EOF > ~/start.sh
 #!/bin/bash
