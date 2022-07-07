@@ -194,7 +194,7 @@ EOF
         OTHER_SERVERS: ros.Fn.join(' ', servers.slice(1).map((server) => `${server.attrPrivateIp}`)),
         NOTIFY: dpdkDownloadConditionHandle.attrCurlCli
       }, `
-      curl -o /root/dpdk-22.03.tar.xz -L https://howardlau.me/static/dpdk-22.03.tar.xz
+      curl -o /root/dpdk-22.03.tar.xz -L https://howardlaume-bj.oss-cn-beijing-internal.aliyuncs.com/dpdk-22.03.tar.xz
       for server in OTHER_SERVERS; do
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /root/dpdk-22.03.tar.xz \${server}:/root/dpdk-22.03.tar.xz &
       done
