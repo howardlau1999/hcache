@@ -67,7 +67,6 @@ export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
 vm.dirty_ratio=80
 net.core.busy_poll=1
-net.core.default_qdisc=noqueue
 net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
@@ -92,7 +91,7 @@ export const uninstallAegis = `
 `
 
 export const disableSpectre = `
-sed -i 's/^GRUB_CMDLINE_LINUX="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off intel_iommu=on /'  /etc/default/grub
+sed -i 's/^GRUB_CMDLINE_LINUX="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off /'  /etc/default/grub
 update-grub
 if [ $? -ne 0 ]; then
   grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -119,9 +118,9 @@ EOF
 #!/bin/bash
 modprobe -rv ip_tables
 dhclient -x -pf /var/run/dhclient-eth0.pid
-ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print $2 " brd " $4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
-export TXQUEUES=(\\$(ls -1qdv /sys/class/net/eth0/queues/tx-*))
-for i in \\\${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \\\${TXQUEUES[i]}/xps_cpus; done;
+ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
+# export TXQUEUES=(\\$(ls -1qdv /sys/class/net/eth0/queues/tx-*))
+# for i in \\\${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \\\${TXQUEUES[i]}/xps_cpus; done;
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
 
