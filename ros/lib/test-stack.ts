@@ -160,7 +160,7 @@ export class TestStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 指定使用的镜像和启动脚本
-    const fromWhich = process.env.IMAGE_FROM || "debian";
+    const fromWhich = process.env.IMAGE_FROM || "fedora";
     const spec = (imageAndStartScript as any)[fromWhich];
     const specImageId = spec.imageId;
     const specStartScript = spec.startScript;
