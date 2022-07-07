@@ -17,13 +17,13 @@ struct key_value {
 class single_thread_zset {
 public:
   struct score_values {
-    score_values(uint32_t score, folly::F14ValueSet<folly::fbstring> values) : score(score), values(values) {}
+    score_values(uint32_t score, folly::F14FastSet<folly::fbstring> values) : score(score), values(values) {}
     uint32_t score{};
-    folly::F14ValueSet<folly::fbstring> values;
+    folly::F14FastSet<folly::fbstring> values;
   };
 
-  folly::F14ValueMap<folly::fbstring, uint32_t> value_to_score_;
-  boost::container::flat_map<uint32_t, folly::F14ValueSet<folly::fbstring>> score_to_values_;
+  folly::F14FastMap<folly::fbstring, uint32_t> value_to_score_;
+  boost::container::flat_map<uint32_t, folly::F14FastSet<folly::fbstring>> score_to_values_;
 
   void zrmv(folly::fbstring const &value);
   void zadd(folly::fbstring &&value, uint32_t score);
@@ -34,9 +34,9 @@ class single_thread_storage {
 public:
   using zset = single_thread_zset;
   using zset_ptr = std::shared_ptr<zset>;
-  using zset_map = folly::F14ValueMap<folly::fbstring, zset_ptr>;
+  using zset_map = folly::F14FastMap<folly::fbstring, zset_ptr>;
   zset_map zsets_;
-  folly::F14ValueMap<folly::fbstring, folly::fbstring> kv_;
+  folly::F14FastMap<folly::fbstring, folly::fbstring> kv_;
 
   folly::Optional<folly::fbstring> get_value_by_key(folly::fbstring &&key);
   void add_key_value(folly::fbstring &&key, folly::fbstring &&value);
@@ -51,10 +51,10 @@ public:
 
 class sharded_storage {
   inline unsigned get_cpu(const folly::fbstring &key) {
-    return folly::hash::SpookyHashV2::Hash64(key.data(), key.size(), 19260817) % seastar::smp::count;
+    return folly::hash::SpookyHashV2::Hash32(key.data(), key.size(), 19260817) % seastar::smp::count;
   }
   inline unsigned get_cpu(const folly::StringPiece &key) {
-    return folly::hash::SpookyHashV2::Hash64(key.data(), key.size(), 19260817) % seastar::smp::count;
+    return folly::hash::SpookyHashV2::Hash32(key.data(), key.size(), 19260817) % seastar::smp::count;
   }
   seastar::distributed<single_thread_storage> peers_;
 public:
@@ -71,7 +71,5 @@ public:
   seastar::future<folly::Optional<folly::fbvector<zset::score_values>>>
   zset_zrange(folly::fbstring &&key, uint32_t min_score, uint32_t max_score);
 };
-
-extern seastar::distributed<single_thread_storage> sharded_hcache;
 
 #endif// _SHARDED_STORAGE_H_
