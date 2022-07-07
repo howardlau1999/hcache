@@ -115,10 +115,10 @@ seastar::future<> sharded_storage::del_key(folly::fbstring &&key) {
 }
 
 folly::fbvector<seastar::future<folly::fbvector<key_value>>>
-sharded_storage::list_keys(folly::F14FastSet<folly::StringPiece> const &keys) {
+sharded_storage::list_keys(folly::F14FastSet<folly::StringPiece> &&keys) {
   folly::fbvector<folly::fbvector<folly::fbstring>> keys_per_cpu(
       seastar::smp::count, folly::fbvector<folly::fbstring>());
-  for (auto const &key: keys) {
+  for (auto &&key: keys) {
     auto cpu = get_cpu(key);
     keys_per_cpu[cpu].emplace_back(key);
   }

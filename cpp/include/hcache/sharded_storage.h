@@ -65,7 +65,7 @@ public:
   seastar::future<folly::Optional<folly::fbstring>> get_value_by_key(folly::fbstring &&key);
   seastar::future<> add_key_value(folly::fbstring &&key, folly::fbstring &&value);
   seastar::future<> del_key(folly::fbstring &&key);
-  folly::fbvector<seastar::future<folly::fbvector<key_value>>> list_keys(folly::F14FastSet<folly::StringPiece> const &keys);
+  folly::fbvector<seastar::future<folly::fbvector<key_value>>> list_keys(folly::F14FastSet<folly::StringPiece> &&keys);
   seastar::future<bool> zset_add(folly::fbstring &&key, folly::fbstring &&value, uint32_t score);
   seastar::future<> zset_rmv(folly::fbstring const &key, folly::fbstring const &value);
   seastar::future<folly::Optional<folly::fbvector<zset::score_values>>>

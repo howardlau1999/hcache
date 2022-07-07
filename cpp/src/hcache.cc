@@ -121,8 +121,8 @@ public:
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
     folly::F14FastSet<folly::StringPiece> keys;
-    for (auto const &key: parser.parse(json)) { keys.insert(key.get_string().take_value()); }
-    auto futures = hcache.list_keys(keys);
+    for (auto const &key: parser.parse(json)) { keys.insert(std::move(key.get_string().take_value())); }
+    auto futures = hcache.list_keys(std::move(keys));
     return seastar::do_with(std::move(futures), rapidjson::Document(), [](auto &&futures, auto &d) {
       auto &kv_list = d.SetArray();
       auto &allocator = d.GetAllocator();
