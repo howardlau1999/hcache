@@ -16,3 +16,6 @@
 [submodule "cpp/third_party/seastar"]
 	path = cpp/third_party/seastar
 	url = https://github.com/howardlau1999/seastar
+[submodule "cpp/third_party/f-stack"]
+	path = cpp/third_party/f-stack
+	url = https://github.com/F-Stack/f-stack/

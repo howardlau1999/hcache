@@ -241,10 +241,10 @@ int main(int argc, char **argv) {
           });
         })
         .then([&http_server] {
-	  seastar::listen_options opts;
-	  opts.listen_backlog = 100000;
           applog.info("Starting hcache server at :8080");
-          return http_server.listen(seastar::ipv4_addr{8080}, opts).then([]() {
+          seastar::listen_options opts;
+          opts.listen_backlog = 100000;
+          return http_server.listen(seastar::ipv4_addr{8080}).then([]() {
             return seastar::keep_doing([] { return seastar::sleep_abortable(std::chrono::hours(1)); });
           });
         })

@@ -31,9 +31,13 @@ if(COMPILER_SUPPORTS_MARCH_NATIVE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
 endif()
 
+include(third_party/seastar/cmake/Finddpdk.cmake)
 find_package(ZLIB)
 find_package(Boost)
 find_package(Threads)
+if(TARGET dpdk::dpdk)
+    set(Seastar_DPDK ON)
+endif(TARGET dpdk::dpdk)
 add_subdirectory(third_party/seastar)
 add_subdirectory(third_party/simdjson)
 add_subdirectory(third_party/folly)
@@ -43,10 +47,9 @@ add_subdirectory(third_party/drogon)
 include_directories(third_party/rapidjson/include)
 include_directories(include)
 
-
 add_library(storage src/storage.cc include/hcache/storage.h)
 add_dependencies(storage rocksdb_src)
-target_link_libraries(storage folly Boost::boost)
+target_link_libraries(storage folly Boost::boost rocksdb)
 
 add_executable(hcache src/hcache.cc)
 add_dependencies(hcache rocksdb_src)
@@ -55,6 +58,14 @@ target_link_libraries(hcache storage simdjson seastar glog rocksdb folly ZLIB::Z
 add_executable(drogon-hcache src/drogon.cc)
 add_dependencies(drogon-hcache rocksdb_src)
 target_link_libraries(drogon-hcache drogon storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+
+if(TARGET dpdk::dpdk)
+    add_library(picohttpparser src/picohttpparser.c include/picohttpparser/picohttpparser.h)
+    add_executable(fstack-hcache src/fstack.cc)
+    add_dependencies(fstack-hcache rocksdb_src)
+    target_link_libraries(fstack-hcache picohttpparser dpdk::dpdk fstack storage simdjson rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+endif(TARGET dpdk::dpdk)
+
 
 add_executable(bench-client src/client.cc)
 target_link_libraries(bench-client seastar)
