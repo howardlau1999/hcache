@@ -26,40 +26,40 @@ sharded_storage hcache;
 
 class init_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     rep->_content = "ok";
     rep->done();
-    return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+    return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
   };
 };
 
 class query_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     auto const &key = req->param["k"];
     folly::fbstring key_string(key.data(), key.size());
     return hcache.get_value_by_key(std::move(key_string)).then([](auto &&value) {
-      auto rep = std::make_unique<seastar::httpd::reply>();
+      auto rep = std::make_unique<seastar::reply>();
       if (value.has_value()) {
         rep->_content = std::move(seastar::sstring(value.value().data(), value.value().size()));
       } else {
         rep->set_status(seastar::reply::status_type::not_found);
       }
       rep->done();
-      return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+      return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
     });
   };
 };
 
 class add_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
     auto document = parser.parse(json);
@@ -67,18 +67,18 @@ public:
     auto const value = document["value"].get_string().take_value();
     return hcache.add_key_value(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()))
         .then([] {
-          auto rep = std::make_unique<seastar::httpd::reply>();
+          auto rep = std::make_unique<seastar::reply>();
           rep->done();
-          return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+          return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
         });
   };
 };
 
 class batch_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
     auto &&doc = parser.parse(json);
@@ -91,69 +91,76 @@ public:
                      folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()));
                })
         .then([] {
-          auto rep = std::make_unique<seastar::httpd::reply>();
+          auto rep = std::make_unique<seastar::reply>();
           rep->done();
-          return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+          return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
         });
   };
 };
 
 class del_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     auto const &key = req->param["k"];
     folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
     return hcache.del_key(std::move(key_string)).then([]() {
-      auto rep = std::make_unique<seastar::httpd::reply>();
+      auto rep = std::make_unique<seastar::reply>();
       rep->done();
-      return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+      return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
     });
   };
 };
 
 class list_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
     folly::F14FastSet<folly::StringPiece> keys;
     for (auto const &key: parser.parse(json)) { keys.insert(key.get_string().take_value()); }
-    return hcache.list_keys(keys).then([](auto &&result) {
-      auto rep = std::make_unique<seastar::httpd::reply>();
-      if (!result.empty()) {
-        auto d = rapidjson::Document();
-        auto &kv_list = d.SetArray();
-        auto &allocator = d.GetAllocator();
-        for (auto const &kv: result) {
-          auto &&kv_object = rapidjson::Value(rapidjson::kObjectType);
-          auto &&k_string = rapidjson::StringRef(kv.key.data(), kv.key.size());
-          auto &&v_string = rapidjson::StringRef(kv.value.data(), kv.value.size());
-          kv_object.AddMember("key", k_string, allocator);
-          kv_object.AddMember("value", v_string, allocator);
-          kv_list.PushBack(kv_object, allocator);
-        }
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        d.Accept(writer);
-        rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
-      } else {
-        rep->set_status(seastar::httpd::reply::status_type::not_found);
-      }
-      rep->done();
-      return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+    auto futures = hcache.list_keys(keys);
+    return seastar::do_with(std::move(futures), rapidjson::Document(), [](auto &&futures, auto &d) {
+      auto &kv_list = d.SetArray();
+      auto &allocator = d.GetAllocator();
+      return seastar::when_all(futures.begin(), futures.end())
+          .then([&](auto &&resolved) {
+            for (auto &&fut: resolved) {
+              for (auto const &kv: fut.get()) {
+                auto &&kv_object = rapidjson::Value(rapidjson::kObjectType);
+                auto &&k_string = rapidjson::StringRef(kv.key.data(), kv.key.size());
+                auto &&v_string = rapidjson::StringRef(kv.value.data(), kv.value.size());
+                kv_object.AddMember("key", k_string, allocator);
+                kv_object.AddMember("value", v_string, allocator);
+                kv_list.PushBack(kv_object, allocator);
+              }
+            }
+            return resolved;
+          })
+          .then([&](...) {
+            auto rep = std::make_unique<seastar::reply>();
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            d.Accept(writer);
+            if (buffer.GetSize() > 2) {
+              rep->write_body("json", std::move(seastar::sstring(buffer.GetString(), buffer.GetSize())));
+            } else {
+              rep->set_status(seastar::reply::status_type::not_found);
+            }
+            return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
+          });
     });
   };
 };
 
 class zadd_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     auto const &key = req->param["k"];
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
@@ -163,19 +170,19 @@ public:
 
     return hcache.zset_add(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()), score)
         .then([](auto success) {
-          auto rep = std::make_unique<seastar::httpd::reply>();
-          if (!success) { rep->set_status(seastar::httpd::reply::status_type::bad_request); }
+          auto rep = std::make_unique<seastar::reply>();
+          if (!success) { rep->set_status(seastar::reply::status_type::bad_request); }
           rep->done();
-          return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+          return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
         });
   };
 };
 
 class zrange_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     auto const &key = req->param["k"];
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->content.data(), req->content.size());
@@ -184,7 +191,7 @@ public:
     auto const max_score = document["max_score"].get_uint64().take_value();
     return hcache.zset_zrange(folly::fbstring(key.data(), key.size()), min_score, max_score)
         .then([](auto &&maybe_score_values) {
-          auto rep = std::make_unique<seastar::httpd::reply>();
+          auto rep = std::make_unique<seastar::reply>();
           if (maybe_score_values.has_value()) {
             auto score_values = maybe_score_values.value();
             if (score_values.empty()) {
@@ -209,19 +216,19 @@ public:
               rep->write_body("json", seastar::sstring(buffer.GetString(), buffer.GetSize()));
             }
           } else {
-            rep->set_status(seastar::httpd::reply::status_type::not_found);
+            rep->set_status(seastar::reply::status_type::not_found);
           }
           rep->done();
-          return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+          return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
         });
   };
 };
 
 class zrmv_handler : public seastar::httpd::handler_base {
 public:
-  virtual future<std::unique_ptr<seastar::httpd::reply>> handle(
+  virtual future<std::unique_ptr<seastar::reply>> handle(
       const seastar::sstring &path, std::unique_ptr<seastar::request> req,
-      std::unique_ptr<seastar::httpd::reply> rep) override {
+      std::unique_ptr<seastar::reply> rep) override {
     auto const &key_value = req->param["kv"];
     auto slash_ptr = key_value.data();
     auto end_ptr = slash_ptr + key_value.size();
@@ -231,9 +238,9 @@ public:
     auto const key = folly::fbstring(key_value.data(), slash_ptr - key_value.data() - 1);
     auto const value = folly::fbstring(slash_ptr, end_ptr - slash_ptr);
     return hcache.zset_rmv(key, value).then([] {
-      auto rep = std::make_unique<seastar::httpd::reply>();
+      auto rep = std::make_unique<seastar::reply>();
       rep->done();
-      return make_ready_future<std::unique_ptr<seastar::httpd::reply>>(std::move(rep));
+      return make_ready_future<std::unique_ptr<seastar::reply>>(std::move(rep));
     });
   };
 };

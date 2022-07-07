@@ -114,7 +114,7 @@ seastar::future<> sharded_storage::del_key(folly::fbstring &&key) {
   return peers_.invoke_on(cpu, &single_thread_storage::del_key, std::move(key));
 }
 
-seastar::future<folly::fbvector<key_value>>
+folly::fbvector<seastar::future<folly::fbvector<key_value>>>
 sharded_storage::list_keys(folly::F14FastSet<folly::StringPiece> const &keys) {
   folly::fbvector<folly::fbvector<folly::fbstring>> keys_per_cpu(
       seastar::smp::count, folly::fbvector<folly::fbstring>());
@@ -129,14 +129,7 @@ sharded_storage::list_keys(folly::F14FastSet<folly::StringPiece> const &keys) {
             ? seastar::make_ready_future<folly::fbvector<key_value>>(peers_.local().list_keys(std::move(keys_per_cpu[i])))
             : peers_.invoke_on(i, &single_thread_storage::list_keys, std::move(keys_per_cpu[i])));
   }
-  return seastar::when_all(futures.begin(), futures.end()).then([](auto &&futures) {
-    folly::fbvector<key_value> result;
-    for (auto &&future: futures) {
-      auto &&values = future.get();
-      result.insert(result.end(), values.begin(), values.end());
-    }
-    return seastar::make_ready_future<folly::fbvector<key_value>>(std::move(result));
-  });
+  return futures;
 }
 
 seastar::future<bool> sharded_storage::zset_add(folly::fbstring &&key, folly::fbstring &&value, uint32_t score) {
