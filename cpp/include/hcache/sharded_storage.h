@@ -33,7 +33,7 @@ public:
 class single_thread_storage {
 public:
   using zset = single_thread_zset;
-  using zset_ptr = std::shared_ptr<zset>;
+  using zset_ptr = seastar::lw_shared_ptr<zset>;
   using zset_map = folly::F14FastMap<folly::fbstring, zset_ptr>;
   zset_map zsets_;
   folly::F14FastMap<folly::fbstring, folly::fbstring> kv_;

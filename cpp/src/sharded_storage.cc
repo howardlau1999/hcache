@@ -53,7 +53,7 @@ void single_thread_storage::del_key(folly::fbstring &&key) {
 
 folly::fbvector<key_value> single_thread_storage::list_keys(folly::fbvector<folly::fbstring> const &keys) {
   folly::fbvector<key_value> result;
-  for (auto const &key: keys) {
+  for (auto &&key: keys) {
     auto it = kv_.find(key);
     if (it != kv_.end()) { result.emplace_back(std::move(key), it->second); }
   }
@@ -65,7 +65,7 @@ bool single_thread_storage::zset_add(folly::fbstring &&key, folly::fbstring &&va
   if (it != kv_.end()) { return false; }
   auto zset_it = zsets_.find(key);
   if (zset_it == zsets_.end()) {
-    auto [new_it, _] = zsets_.emplace(std::move(key), std::make_shared<zset>());
+    auto [new_it, _] = zsets_.emplace(std::move(key), seastar::make_lw_shared<zset>());
     zset_it = std::move(new_it);
   }
   auto &zset = *zset_it->second;
