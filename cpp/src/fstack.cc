@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <picohttpparser/picohttpparser.h>
+
 #include "ff_api.h"
 #include "ff_config.h"
 
@@ -22,7 +24,7 @@ struct kevent events[MAX_EVENTS];
 int kq;
 int sockfd;
 
-extern char html1[1], html2[1], html[1];
+char html1[1], html2[1], html[1];
 extern int ff_zc_mbuf_get(struct ff_zc_mbuf *m, int len);
 extern int ff_zc_mbuf_write(struct ff_zc_mbuf *m, const char *data, int len);
 

@@ -47,13 +47,17 @@ add_subdirectory(third_party/drogon)
 include_directories(third_party/rapidjson/include)
 include_directories(include)
 
-add_library(storage src/storage.cc include/hcache/storage.h)
+add_library(storage src/storage.cc include/hcache/storage.h include/hcache/data_loader.h)
 add_dependencies(storage rocksdb_src)
 target_link_libraries(storage folly Boost::boost rocksdb)
 
+add_library(sharded_storage src/sharded_storage.cc include/hcache/sharded_storage.h include/hcache/data_loader.h)
+add_dependencies(sharded_storage rocksdb_src)
+target_link_libraries(sharded_storage seastar folly Boost::boost rocksdb)
+
 add_executable(hcache src/hcache.cc)
 add_dependencies(hcache rocksdb_src)
-target_link_libraries(hcache storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+target_link_libraries(hcache sharded_storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
 add_executable(drogon-hcache src/drogon.cc)
 add_dependencies(drogon-hcache rocksdb_src)

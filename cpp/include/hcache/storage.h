@@ -51,8 +51,6 @@ public:
   zset_zrange(folly::fbstring const &key, uint32_t min_score, uint32_t max_score);
 };
 
-void init_storage();
-
 extern storage hcache;
 
 #endif// _STORAGE_H_

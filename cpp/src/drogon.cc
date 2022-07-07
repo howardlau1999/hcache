@@ -1,6 +1,7 @@
 #include <drogon/HttpController.h>
 #include <drogon/HttpSimpleController.h>
 #include <hcache/storage.h>
+#include <hcache/data_loader.h>
 #include <iostream>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
@@ -8,6 +9,8 @@
 #include <simdjson.h>
 
 using namespace drogon;
+
+storage hcache;
 
 class InitCtrl : public drogon::HttpSimpleController<InitCtrl> {
 public:
@@ -214,7 +217,7 @@ public:
 };
 
 int main() {
-  init_storage();
+  init_storage(hcache);
   auto &a = app()
                 .setThreadNum(4)
                 .setClientMaxBodySize(512 * 1024 * 1024)
