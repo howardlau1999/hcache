@@ -118,6 +118,7 @@ export class DPDKStack extends ros.Stack {
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
         ${dnfInstallPackages}
+        dnf install -y git gcc openssl-devel kernel-devel-$(uname -r) bc numactl-devel mkdir make net-tools vim pciutils iproute pcre-devel zlib-devel elfutils-libelf-devel meson
         ${disableSpectre}
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh
@@ -208,7 +209,7 @@ EOF
     const dpdkSetupCommand = new ecs.RunCommand(this, 'hcache-dpdk-setup', {
       commandContent: `
       tar -C /root -xJf /root/dpdk-22.03.tar.xz
-      bash -c "cd /root/dpdk-22.03 && meson -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
+      bash -c "cd /root/dpdk-22.03 && meson -Denable_kmods=true -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
       `,
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),

@@ -138,7 +138,7 @@ public:
                 kv_list.PushBack(kv_object, allocator);
               }
             }
-            return resolved;
+            return std::move(resolved);
           })
           .then([&](...) {
             auto rep = std::make_unique<seastar::reply>();
