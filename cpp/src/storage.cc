@@ -47,15 +47,15 @@ folly::fbvector<zset::score_values> zset::zrange(uint32_t min_score, uint32_t ma
 }
 
 folly::Optional<folly::fbstring> storage::get_value_by_key(folly::fbstring &&key) {
-  auto it = kv_.find(key);
+  auto it = kv_.find(std::move(key));
   if (it != kv_.end()) { return it->second; }
   return folly::none;
 }
 
-void storage::add_key_value(folly::fbstring const &key, folly::fbstring const &value) {
+void storage::add_key_value(folly::fbstring &&key, folly::fbstring &&value) {
   kv_.erase(key);
-  kv_.emplace(key, value);
   zsets_.erase(key);
+  kv_.emplace(std::move(key), std::move(value));
 }
 
 void storage::del_key(folly::fbstring &&key) {
@@ -63,21 +63,21 @@ void storage::del_key(folly::fbstring &&key) {
   zsets_.erase(key);
 }
 
-folly::fbvector<key_value> storage::list_keys(folly::F14FastSet<folly::StringPiece> const &keys) {
+folly::fbvector<key_value> storage::list_keys(folly::F14FastSet<folly::StringPiece> &&keys) {
   folly::fbvector<key_value> result;
   for (auto const &key: keys) {
     auto it = kv_.find(folly::fbstring(key));
-    if (it != kv_.end()) { result.emplace_back(key, it->second); }
+    if (it != kv_.end()) { result.emplace_back(std::move(key), it->second); }
   }
   return result;
 }
 
-bool storage::zset_add(folly::fbstring const &key, folly::fbstring const &value, uint32_t score) {
+bool storage::zset_add(folly::fbstring &&key, folly::fbstring &&value, uint32_t score) {
   auto it = kv_.find(key);
   if (it != kv_.end()) { return false; }
   auto zset_it = zsets_.find(key);
   if (zset_it == zsets_.end()) {
-    auto [new_it, _] = zsets_.emplace(key, std::make_shared<zset>());
+    auto [new_it, _] = zsets_.emplace(std::move(key), std::make_shared<zset>());
     zset_it = std::move(new_it);
   }
   auto &zset = *zset_it->second;
@@ -85,16 +85,16 @@ bool storage::zset_add(folly::fbstring const &key, folly::fbstring const &value,
   return true;
 }
 
-void storage::zset_rmv(folly::fbstring const &key, folly::fbstring const &value) {
-  auto zset_it = zsets_.find(key);
+void storage::zset_rmv(folly::fbstring &&key, folly::fbstring &&value) {
+  auto zset_it = zsets_.find(std::move(key));
   if (zset_it == zsets_.end()) { return; }
   auto &zset = *zset_it->second;
-  zset.zrmv(value);
+  zset.zrmv(std::move(value));
 }
 
 folly::Optional<folly::fbvector<zset::score_values>>
-storage::zset_zrange(folly::fbstring const &key, uint32_t min_score, uint32_t max_score) {
-  auto zset_it = zsets_.find(key);
+storage::zset_zrange(folly::fbstring &&key, uint32_t min_score, uint32_t max_score) {
+  auto zset_it = zsets_.find(std::move(key));
   if (zset_it != zsets_.end()) { return zset_it->second->zrange(min_score, max_score); }
   return folly::none;
 }
