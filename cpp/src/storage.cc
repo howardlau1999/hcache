@@ -63,7 +63,7 @@ void storage::del_key(folly::fbstring &&key) {
   zsets_.erase(key);
 }
 
-folly::fbvector<key_value> storage::list_keys(folly::F14FastSet<folly::StringPiece> &&keys) {
+folly::fbvector<key_value> storage::list_keys(folly::F14FastSet<folly::StringPiece> const& keys) {
   folly::fbvector<key_value> result;
   for (auto const &key: keys) {
     auto it = kv_.find(folly::fbstring(key));

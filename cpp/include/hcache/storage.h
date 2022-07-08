@@ -11,8 +11,6 @@
 #include <boost/container/flat_map.hpp>
 
 struct key_value {
-  key_value(folly::StringPiece const &key, folly::fbstring const &value) : key(key), value(value) {}
-
   folly::StringPiece key;
   folly::fbstring value;
 };
@@ -21,7 +19,6 @@ class zset {
   folly::SharedMutex mutex_;
 public:
   struct score_values {
-    score_values(uint32_t score, folly::F14FastSet<folly::fbstring> values) : score(score), values(values)  {}
     uint32_t score{};
     folly::F14FastSet<folly::fbstring> values;
   };
@@ -44,7 +41,7 @@ public:
   folly::Optional<folly::fbstring> get_value_by_key(folly::fbstring &&key);
   void add_key_value(folly::fbstring &&key, folly::fbstring &&value);
   void del_key(folly::fbstring &&key);
-  folly::fbvector<key_value> list_keys(folly::F14FastSet<folly::StringPiece> &&keys);
+  folly::fbvector<key_value> list_keys(folly::F14FastSet<folly::StringPiece> const& keys);
   bool zset_add(folly::fbstring &&key, folly::fbstring &&value, uint32_t score);
   void zset_rmv(folly::fbstring &&key, folly::fbstring &&value);
   folly::Optional<folly::fbvector<zset::score_values>>
