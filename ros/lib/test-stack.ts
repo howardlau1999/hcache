@@ -66,8 +66,8 @@ EOF
 export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
 vm.dirty_ratio=80
-# net.core.busy_poll=1
-net.ipv4.tcp_congestion_control=reno
+net.core.busy_poll=1
+# net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
 net.ipv4.tcp_fin_timeout = 15
@@ -117,8 +117,8 @@ EOF
         cat <<EOF > ~/start.sh
 #!/bin/bash
 modprobe -rv ip_tables
-dhclient -x -pf /var/run/dhclient-eth0.pid
-ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
+# dhclient -x -pf /var/run/dhclient-eth0.pid
+# ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
 # export TXQUEUES=(\\$(ls -1qdv /sys/class/net/eth0/queues/tx-*))
 # for i in \\\${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \\\${TXQUEUES[i]}/xps_cpus; done;
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
