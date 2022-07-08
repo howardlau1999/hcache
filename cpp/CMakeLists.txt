@@ -67,7 +67,7 @@ if(TARGET dpdk::dpdk)
     add_library(picohttpparser src/picohttpparser.c include/picohttpparser/picohttpparser.h)
     add_executable(fstack-hcache src/fstack.cc)
     add_dependencies(fstack-hcache rocksdb_src)
-    target_link_libraries(fstack-hcache picohttpparser dpdk::dpdk fstack storage simdjson rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+    target_link_libraries(fstack-hcache picohttpparser seastar fstack storage simdjson rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 endif(TARGET dpdk::dpdk)
 
 
