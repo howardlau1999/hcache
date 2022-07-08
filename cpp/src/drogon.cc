@@ -35,10 +35,9 @@ public:
       const {
     auto resp = HttpResponse::newHttpResponse();
     resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
-    folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
-    auto const &value = hcache.get_value_by_key(std::move(key_string));
+    auto const &value = hcache.get_value_by_key(std::move(key));
     if (value.has_value()) {
-      resp->setBody(value.value().toStdString());
+      resp->setBody(std::move(value.value().toStdString()));
     } else {
       resp->setBody("");
       resp->setStatusCode(HttpStatusCode::k404NotFound);
@@ -57,8 +56,7 @@ public:
       const std::string &key) const {
     auto resp = HttpResponse::newHttpResponse();
     resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
-    folly::fbstring key_string(folly::StringPiece(key.data(), key.size()));
-    hcache.del_key(std::move(key_string));
+    hcache.del_key(std::move(key));
     callback(resp);
   }
 };
@@ -72,9 +70,9 @@ public:
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     auto document = parser.parse(json);
-    auto const key = document["key"].get_string().take_value();
-    auto const value = document["value"].get_string().take_value();
-    hcache.add_key_value(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()));
+    auto &&key = document["key"].get_string().take_value();
+    auto &&value = document["value"].get_string().take_value();
+    hcache.add_key_value(std::move(folly::fbstring(key.data(), key.size())), std::move(folly::fbstring(value.data(), value.size())));
     callback(resp);
   }
   PATH_LIST_BEGIN
@@ -91,9 +89,9 @@ public:
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     for (auto const &kv: parser.parse(json)) {
-      auto const key = kv["key"].get_string().take_value();
-      auto const value = kv["value"].get_string().take_value();
-      hcache.add_key_value(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()));
+      auto &&key = kv["key"].get_string().take_value();
+      auto &&value = kv["value"].get_string().take_value();
+      hcache.add_key_value(std::move(folly::fbstring(key.data(), key.size())), std::move(folly::fbstring(value.data(), value.size())));
     }
     resp->setBody("");
     callback(resp);
@@ -112,8 +110,8 @@ public:
     simdjson::dom::parser parser;
     simdjson::padded_string_view json = simdjson::padded_string_view(req->bodyData(), req->bodyLength());
     folly::F14FastSet<folly::StringPiece> keys;
-    for (auto const &key: parser.parse(json)) { keys.insert(key.get_string().take_value()); }
-    auto result = hcache.list_keys(keys);
+    for (auto &&key: parser.parse(json)) { keys.emplace(key.get_string().take_value()); }
+    auto result = hcache.list_keys(std::move(keys));
     if (!result.empty()) {
       auto d = rapidjson::Document();
       auto &kv_list = d.SetArray();
@@ -129,7 +127,7 @@ public:
       rapidjson::StringBuffer buffer;
       rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
       d.Accept(writer);
-      resp->setBody(std::string(buffer.GetString(), buffer.GetSize()));
+      resp->setBody(std::move(std::string(buffer.GetString(), buffer.GetSize())));
     } else {
       resp->setBody("");
       resp->setStatusCode(HttpStatusCode::k404NotFound);
@@ -157,7 +155,7 @@ public:
     auto document = parser.parse(json);
     auto const score = document["score"].get_uint64().take_value();
     auto const value = document["value"].get_string().take_value();
-    if (!hcache.zset_add(folly::fbstring(key.data(), key.size()), folly::fbstring(value.data(), value.size()), score)) {
+    if (!hcache.zset_add(std::move(folly::fbstring(key.data(), key.size())), std::move(folly::fbstring(value.data(), value.size())), score)) {
       resp->setBody("");
       resp->setStatusCode(HttpStatusCode::k404NotFound);
     }
@@ -196,7 +194,7 @@ public:
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
         d.Accept(writer);
-        resp->setBody(std::string(buffer.GetString(), buffer.GetSize()));
+        resp->setBody(std::move(std::string(buffer.GetString(), buffer.GetSize())));
       }
     } else {
       resp->setBody("");
@@ -211,7 +209,7 @@ public:
       const std::string &value) const {
     auto resp = HttpResponse::newHttpResponse();
     resp->setContentTypeCode(ContentType::CT_TEXT_PLAIN);
-    hcache.zset_rmv(key, value);
+    hcache.zset_rmv(std::move(key), std::move(value));
     callback(resp);
   }
 };

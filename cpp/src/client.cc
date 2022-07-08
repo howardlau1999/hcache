@@ -56,9 +56,10 @@ public:
             std::string batch_request_json_body;
             batch_request_json_body = "[";
             for (int i = 0; i < 5000; ++i) {
-                char key[16];
+                char key[16] = {0};
                 char value[256];
                 memset(value, 'a', 256);
+                value[255] = '\0';
                 sprintf(key, "%d", i);
                 char comma = i ? ',' : ' ';
                 batch_request_json_body.push_back(comma);
@@ -68,8 +69,8 @@ public:
                 batch_request_json_body += value;
                 batch_request_json_body += "\"}";
             }
-            batch_request_json_body = "]";
-            batch_request = fmt::format("GET /init HTTP/1.1\r\nContent-Length: {}\r\nHost: 127.0.0.1:10000\r\n\r\n{}", batch_request_json_body.size(), batch_request_json_body);
+            batch_request_json_body += "]";
+            batch_request = fmt::format("POST /batch HTTP/1.1\r\nContent-Length: {}\r\nHost: 127.0.0.1:10000\r\n\r\n{}", batch_request_json_body.size(), batch_request_json_body);
         }
 
         uint64_t nr_done() {

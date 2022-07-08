@@ -111,15 +111,15 @@ int loop(void *arg) {
       conn.recv_buf->unshare();
       size_t readlen = ff_recv(clientfd, conn.recv_buf->writableData(), 512, 0);
       if (conn.func == CacheMethod::Unknown) {
-        char *path;
-        char *method;
+        const char *path;
+        const char *method;
         int minor_version;
         size_t path_len;
         size_t method_len;
         size_t num_headers;
         phr_header *headers;
         int parser_ret = phr_parse_request(
-            reinterpret_cast<const char *>(conn.recv_buf->data()), conn.recv_buf->length(), &method, &method_len, &path,
+            reinterpret_cast<char *>(conn.recv_buf->writableData()), conn.recv_buf->length(), &method, &method_len, &path,
             &path_len, &minor_version, headers, &num_headers, 0);
         if (parser_ret == -1) {
           ff_close(clientfd);

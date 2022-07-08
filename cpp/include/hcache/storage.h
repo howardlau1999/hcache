@@ -13,7 +13,7 @@
 struct key_value {
   key_value(folly::StringPiece const &key, folly::fbstring const &value) : key(key), value(value) {}
 
-  folly::fbstring key;
+  folly::StringPiece key;
   folly::fbstring value;
 };
 
@@ -21,13 +21,13 @@ class zset {
   folly::SharedMutex mutex_;
 public:
   struct score_values {
-    score_values(uint32_t score, folly::F14ValueSet<folly::fbstring> values) : score(score), values(values)  {}
+    score_values(uint32_t score, folly::F14FastSet<folly::fbstring> values) : score(score), values(values)  {}
     uint32_t score{};
-    folly::F14ValueSet<folly::fbstring> values;
+    folly::F14FastSet<folly::fbstring> values;
   };
 
   folly::ConcurrentHashMap<folly::fbstring, uint32_t> value_to_score_;
-  boost::container::flat_map<uint32_t, folly::F14ValueSet<folly::fbstring>> score_to_values_;
+  boost::container::flat_map<uint32_t, folly::F14FastSet<folly::fbstring>> score_to_values_;
 
   void zrmv(folly::fbstring const &value);
   void zadd(folly::fbstring const &value, uint32_t score);
@@ -42,13 +42,13 @@ public:
   folly::ConcurrentHashMap<folly::fbstring, folly::fbstring> kv_;
 
   folly::Optional<folly::fbstring> get_value_by_key(folly::fbstring &&key);
-  void add_key_value(folly::fbstring const &key, folly::fbstring const &value);
+  void add_key_value(folly::fbstring &&key, folly::fbstring &&value);
   void del_key(folly::fbstring &&key);
-  folly::fbvector<key_value> list_keys(folly::F14FastSet<folly::StringPiece> const &keys);
-  bool zset_add(folly::fbstring const &key, folly::fbstring const &value, uint32_t score);
-  void zset_rmv(folly::fbstring const &key, folly::fbstring const &value);
+  folly::fbvector<key_value> list_keys(folly::F14FastSet<folly::StringPiece> &&keys);
+  bool zset_add(folly::fbstring &&key, folly::fbstring &&value, uint32_t score);
+  void zset_rmv(folly::fbstring &&key, folly::fbstring &&value);
   folly::Optional<folly::fbvector<zset::score_values>>
-  zset_zrange(folly::fbstring const &key, uint32_t min_score, uint32_t max_score);
+  zset_zrange(folly::fbstring &&key, uint32_t min_score, uint32_t max_score);
 };
 
 extern storage hcache;

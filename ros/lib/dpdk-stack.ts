@@ -3,7 +3,7 @@ import * as ecs from '@alicloud/ros-cdk-ecs';
 import * as ROS from '@alicloud/ros-cdk-ros';
 import { readFileSync } from 'fs';
 import { hostname } from 'os';
-import { aptInstallPackages, disableSpectre, dnfInstallPackages } from './test-stack';
+import { aptInstallPackages, disableSpectre, dnfInstallPackages, installRust } from './test-stack';
 
 export class DPDKStack extends ros.Stack {
   constructor(scope: ros.Construct, id: string, props?: ros.StackProps) {
@@ -210,6 +210,7 @@ EOF
       commandContent: `
       tar -C /root -xJf /root/dpdk-22.03.tar.xz
       bash -c "cd /root/dpdk-22.03 && meson -Denable_kmods=true -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
+      ${installRust}
       `,
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),

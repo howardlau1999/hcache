@@ -66,7 +66,7 @@ EOF
 export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
 vm.dirty_ratio=80
-net.core.busy_poll=1
+# net.core.busy_poll=1
 net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080
@@ -110,7 +110,7 @@ const startupScriptFromCleanImage = `
 #!/bin/bash
 export INIT_DIR=/data
 while true; do
-  /usr/bin/hcache --poll-mode --reserve-memory 512M --max-networking-io-control-blocks 50000
+  /usr/bin/hcache --reserve-memory 512M
 done
 EOF
         # 启动脚本
@@ -209,7 +209,7 @@ export class TestStack extends ros.Stack {
     });
 
     // 创建安全组开放端口
-    const sg = new ecs.SecurityGroup(this, 'hcahce-sg', { vpcId: ecsVpc.attrVpcId });
+    const sg = new ecs.SecurityGroup(this, 'hcache-sg', { vpcId: ecsVpc.attrVpcId });
 
     let ports = ['22', '8080', '80', '443'];
     for (const port of ports) {

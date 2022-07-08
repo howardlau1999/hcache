@@ -59,6 +59,10 @@ add_executable(hcache src/hcache.cc)
 add_dependencies(hcache rocksdb_src)
 target_link_libraries(hcache sharded_storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
 
+add_executable(hcache_shared src/hcache_shared.cc)
+add_dependencies(hcache_shared rocksdb_src)
+target_link_libraries(hcache_shared storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
+
 add_executable(drogon-hcache src/drogon.cc)
 add_dependencies(drogon-hcache rocksdb_src)
 target_link_libraries(drogon-hcache drogon storage simdjson seastar glog rocksdb folly ZLIB::ZLIB zstd snappy Boost::boost)
