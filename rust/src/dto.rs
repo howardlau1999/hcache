@@ -17,3 +17,9 @@ pub struct ScoreRange {
     pub min_score: u32,
     pub max_score: u32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct UpdateCluster {
+    pub hosts: Vec<String>,
+    pub index: i32,
+}

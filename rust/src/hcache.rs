@@ -5,9 +5,9 @@ mod glommio_hyper;
 mod monoio_hyper;
 
 #[cfg(feature = "monoio_parser")]
-mod monoio_parser;
-#[cfg(feature = "monoio_parser")]
 mod http_parser;
+#[cfg(feature = "monoio_parser")]
+mod monoio_parser;
 #[cfg(feature = "monoio_parser")]
 use monoio_parser::monoio_parser_run;
 
@@ -32,12 +32,18 @@ pub struct ZSet {
     score_to_values: RwLock<BTreeMap<u32, RwLock<HashSet<String>>>>,
 }
 
+pub struct ClusterInfo {
+    pub peers: Vec<String>,
+    pub me: i32,
+}
+
 pub struct Storage {
     #[cfg(not(feature = "memory"))]
     db: DBWithThreadMode<MultiThreaded>,
     #[cfg(feature = "memory")]
     kv: LockFreeCuckooHash<String, String>,
     zsets: LockFreeCuckooHash<String, ZSet>,
+    cluster: RwLock<ClusterInfo>,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -163,6 +169,12 @@ impl Storage {
 
     pub fn remove_key(&self, key: &str) -> Result<(), ()> {
         self.remove_key_in_memory(key)
+    }
+
+    pub fn update_peers(&self, peers: Vec<String>, me: i32) {
+        let mut cluster = self.cluster.write();
+        cluster.peers = peers;
+        cluster.me = me;
     }
 }
 
@@ -412,6 +424,7 @@ async fn hyper_handler(
             "list" => handle_list(req, storage).await,
             "zadd" => handle_zadd(path[2], req.into_body(), storage).await,
             "zrange" => handle_zrange(path[2], req.into_body(), storage).await,
+            "updateCluster" => handle_updatecluster(req.into_body(), storage).await,
             _ => Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty())
@@ -422,6 +435,16 @@ async fn hyper_handler(
         .status(StatusCode::NOT_FOUND)
         .body(Body::from("404 not found"))
         .unwrap())
+}
+
+async fn handle_updatecluster(
+    body: Body,
+    storage: Arc<Storage>,
+) -> Result<Response<Body>, hyper::Error> {
+    let data = hyper::body::to_bytes(body).await?;
+    let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
+    storage.update_peers(info.hosts, info.index);
+    Ok(Response::new(Body::empty()))
 }
 
 #[cfg(feature = "tokio_local")]
@@ -479,10 +502,7 @@ fn tokio_local_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "tokio_uring")]
 fn tokio_uring_run(storage: Arc<Storage>) {
-    use hyper::{
-        service::service_fn,
-        server::conn::Http
-    };
+    use hyper::{server::conn::Http, service::service_fn};
     use std::net::SocketAddr;
     tokio_uring::start(async {
         let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
@@ -638,6 +658,10 @@ fn main() {
         #[cfg(feature = "memory")]
         kv,
         zsets: LockFreeCuckooHash::new(),
+        cluster: RwLock::new(ClusterInfo {
+            me: -1,
+            peers: vec![],
+        }),
     });
 
     #[cfg(feature = "tokio_uring")]
@@ -651,11 +675,10 @@ fn main() {
 
     #[cfg(feature = "glommio")]
     glommio_run(storage);
-    
+
     #[cfg(feature = "monoio")]
     monoio_run(storage);
 
     #[cfg(feature = "monoio_parser")]
     monoio_parser_run(storage);
-
 }
