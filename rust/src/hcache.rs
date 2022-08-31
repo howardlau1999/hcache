@@ -400,6 +400,16 @@ async fn handle_list(
     )
 }
 
+async fn handle_updatecluster(
+    body: Body,
+    storage: Arc<Storage>,
+) -> Result<Response<Body>, hyper::Error> {
+    let data = hyper::body::to_bytes(body).await?;
+    let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
+    storage.update_peers(info.hosts, info.index);
+    Ok(Response::new(Body::from("ok")))
+}
+
 #[cfg(not(feature = "monoio_parser"))]
 async fn hyper_handler(
     req: Request<Body>,
@@ -435,16 +445,6 @@ async fn hyper_handler(
         .status(StatusCode::NOT_FOUND)
         .body(Body::from("404 not found"))
         .unwrap())
-}
-
-async fn handle_updatecluster(
-    body: Body,
-    storage: Arc<Storage>,
-) -> Result<Response<Body>, hyper::Error> {
-    let data = hyper::body::to_bytes(body).await?;
-    let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
-    storage.update_peers(info.hosts, info.index);
-    Ok(Response::new(Body::empty()))
 }
 
 #[cfg(feature = "tokio_local")]
