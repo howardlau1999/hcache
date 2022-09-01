@@ -218,6 +218,36 @@ async fn handle_updatecluster(
     Ok(Response::new(Body::from("ok")))
 }
 
+async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
+    if let Ok(init_paths) = std::env::var("INIT_DIRS") {
+        for init_path in init_paths.split(",") {
+            let db_path = Path::new(init_path);
+            let mut options = Options::default();
+            options.create_if_missing(true);
+            options.set_allow_mmap_reads(true);
+            options.set_allow_mmap_writes(true);
+            options.set_unordered_write(true);
+            options.set_use_adaptive_mutex(true);
+            #[cfg(feature = "memory")]
+            if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
+                let marker_file_path = db_path.join(".loaded");
+                if !marker_file_path.exists() {
+                    if let Err(_) = std::fs::write(marker_file_path, "") {
+                        println!("Failed to write marker file");
+                    }
+                    init_load_kv(
+                        db,
+                        &storage.kv,
+                        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+                        storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
+                    );
+                }
+            }
+        }
+    }
+    Ok(Response::new(Body::from("ok")))
+}
+
 #[cfg(not(feature = "monoio_parser"))]
 async fn hyper_handler(
     req: Request<Body>,
@@ -230,7 +260,7 @@ async fn hyper_handler(
             "query" => handle_query(path[2], storage).await,
             "del" => handle_del(path[2], storage).await,
             "zrmv" => handle_zrmv(path[2], path[3], storage).await,
-            "init" => Ok(Response::new(Body::from("ok"))),
+            "init" => handle_init(storage).await,
             _ => Ok(Response::new(Body::from("ok"))),
         };
     } else if req.method() == &Method::POST {
@@ -408,7 +438,12 @@ fn monoio_run(storage: Arc<Storage>) {
 }
 
 #[cfg(feature = "memory")]
-fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<String, String>) {
+fn init_load_kv(
+    db: DBWithThreadMode<MultiThreaded>,
+    kv: &LockFreeCuckooHash<String, String>,
+    peers: u64,
+    me: usize,
+) {
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
     options.set_verify_checksums(false);
@@ -421,12 +456,13 @@ fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<Str
         let key = iter.key();
         let value = iter.value();
         unsafe {
-            kv.insert(
-                String::from_utf8_unchecked(key.unwrap_unchecked().to_vec()),
-                String::from_utf8_unchecked(value.unwrap_unchecked().to_vec()),
-            );
+            let key = String::from_utf8_unchecked(key.unwrap_unchecked().to_vec());
+            let value = String::from_utf8_unchecked(value.unwrap_unchecked().to_vec());
+            if get_shard(&key, peers) == me {
+                kv.insert(key, value);
+                count += 1;
+            }
         }
-        count += 1;
         iter.next();
     }
     let duration = tik.elapsed();
@@ -436,25 +472,7 @@ fn init_load_kv(db: DBWithThreadMode<MultiThreaded>, kv: &LockFreeCuckooHash<Str
 fn main() {
     #[cfg(feature = "memory")]
     let kv = LockFreeCuckooHash::new();
-    if let Ok(init_path) = std::env::var("INIT_DIR") {
-        let db_path = Path::new(&init_path);
-        let mut options = Options::default();
-        options.create_if_missing(true);
-        options.set_allow_mmap_reads(true);
-        options.set_allow_mmap_writes(true);
-        options.set_unordered_write(true);
-        options.set_use_adaptive_mutex(true);
-        #[cfg(feature = "memory")]
-        if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
-            let marker_file_path = db_path.join(".loaded");
-            if !marker_file_path.exists() {
-                init_load_kv(db, &kv);
-                if let Err(_) = std::fs::write(marker_file_path, "") {
-                    println!("Failed to write marker file");
-                }
-            }
-        }
-    }
+
     #[cfg(not(feature = "memory"))]
     let db_path = Path::new(std::env::var("INIT_DIR").unwrap());
     #[cfg(not(feature = "memory"))]
