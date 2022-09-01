@@ -21,5 +21,5 @@ pub struct ScoreRange {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct UpdateCluster {
     pub hosts: Vec<String>,
-    pub index: i32,
+    pub index: u32,
 }

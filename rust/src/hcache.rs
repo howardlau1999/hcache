@@ -1,5 +1,12 @@
-mod dto;
 mod cluster;
+mod dto;
+mod storage;
+use cluster::CachePeerClient;
+use storage::{ClusterInfo, Storage, ZSet};
+
+#[cfg(feature = "memory")]
+use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
+
 #[cfg(feature = "glommio")]
 mod glommio_hyper;
 #[cfg(feature = "monoio")]
@@ -12,10 +19,7 @@ mod monoio_parser;
 #[cfg(feature = "monoio_parser")]
 use monoio_parser::monoio_parser_run;
 
-#[cfg(feature = "memory")]
-use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
-
-use dto::{InsrtRequest, ScoreRange, ScoreValue};
+use dto::{ScoreRange, ScoreValue};
 
 use hyper::{Body, Method, Request, Response, StatusCode};
 use parking_lot::RwLock;
@@ -24,160 +28,9 @@ use parking_lot::RwLock;
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
-
-pub struct ZSet {
-    value_to_score: LockFreeCuckooHash<String, u32>,
-    score_to_values: RwLock<BTreeMap<u32, RwLock<HashSet<String>>>>,
-}
-
-pub struct ClusterInfo {
-    pub peers: Vec<String>,
-    pub me: i32,
-}
-
-pub struct Storage {
-    #[cfg(not(feature = "memory"))]
-    db: DBWithThreadMode<MultiThreaded>,
-    #[cfg(feature = "memory")]
-    kv: LockFreeCuckooHash<String, String>,
-    zsets: LockFreeCuckooHash<String, ZSet>,
-    cluster: RwLock<ClusterInfo>,
-}
-
-#[cfg(not(feature = "memory"))]
-impl Storage {
-    fn get_kv_in_db(&self, key: &str) -> Option<String> {
-        self.db
-            .get(key)
-            .ok()
-            .flatten()
-            .map(|value| unsafe { String::from_utf8_unchecked(value) })
-    }
-
-    fn insert_kv_in_db(&self, key: &str, value: &str) -> Result<(), ()> {
-        self.db.put(key, value).map_err(|_| ())
-    }
-
-    fn batch_insert_kv_in_db(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-        let db = &self.db;
-        let mut write_batch = WriteBatch::default();
-        for kv in kvs {
-            {
-                let shard = get_shard(&kv.key);
-                let zsets = &self.zsets[shard];
-                let mut zsets = zsets.write();
-                zsets.remove(&kv.key);
-            }
-            write_batch.put(kv.key, kv.value);
-        }
-        db.write(write_batch).map_err(|_| ())
-    }
-
-    fn list_keys_in_db(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
-        self.db
-            .multi_get(&keys)
-            .into_iter()
-            .zip(keys.into_iter())
-            .filter_map(|(res, key)| match res {
-                Ok(value) => value.map(|value| InsrtRequest {
-                    key,
-                    value: unsafe { String::from_utf8_unchecked(value) },
-                }),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn remove_key_in_db(&self, key: &str) -> Result<(), ()> {
-        self.db.delete(key).map_err(|_| ())
-    }
-
-    pub fn get_kv(&self, key: &str) -> Option<String> {
-        self.get_kv_in_db(key)
-    }
-
-    pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
-        self.insert_kv_in_db(key, value)
-    }
-
-    pub fn batch_insert_kv(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-        self.batch_insert_kv_in_db(kvs)
-    }
-
-    pub fn list_keys(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
-        self.list_keys_in_db(keys)
-    }
-
-    pub fn remove_key(&self, key: &str) -> Result<(), ()> {
-        self.remove_key_in_db(key)
-    }
-}
-
-#[cfg(feature = "memory")]
-impl Storage {
-    fn get_kv_in_memory(&self, key: &str) -> Option<String> {
-        let guard = pin();
-        self.kv.get(key, &guard).cloned()
-    }
-
-    fn insert_kv_in_memory(&self, key: &str, value: &str) -> Result<(), ()> {
-        self.kv.insert(key.to_string(), value.to_string());
-        Ok(())
-    }
-
-    fn batch_insert_kv_in_memory(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-        for kv in kvs {
-            self.kv.insert(kv.key, kv.value);
-        }
-        Ok(())
-    }
-
-    fn list_keys_in_memory(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
-        keys.into_iter()
-            .filter_map(|key| {
-                let guard = pin();
-                self.kv.get(&key, &guard).map(|value| InsrtRequest {
-                    key,
-                    value: value.clone(),
-                })
-            })
-            .collect()
-    }
-
-    fn remove_key_in_memory(&self, key: &str) -> Result<(), ()> {
-        self.kv.remove(key);
-        Ok(())
-    }
-
-    pub fn get_kv(&self, key: &str) -> Option<String> {
-        self.get_kv_in_memory(key)
-    }
-
-    pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
-        self.insert_kv_in_memory(key, value)
-    }
-
-    pub fn batch_insert_kv(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-        self.batch_insert_kv_in_memory(kvs)
-    }
-
-    pub fn list_keys(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
-        self.list_keys_in_memory(keys)
-    }
-
-    pub fn remove_key(&self, key: &str) -> Result<(), ()> {
-        self.remove_key_in_memory(key)
-    }
-
-    pub fn update_peers(&self, peers: Vec<String>, me: i32) {
-        let mut cluster = self.cluster.write();
-        cluster.peers = peers;
-        cluster.me = me;
-    }
-}
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let value = storage.get_kv(key).map_or_else(
@@ -407,7 +260,7 @@ async fn handle_updatecluster(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
-    storage.update_peers(info.hosts, info.index);
+    storage.update_peers(info.hosts, info.index).await;
     Ok(Response::new(Body::from("ok")))
 }
 
@@ -659,10 +512,11 @@ fn main() {
         #[cfg(feature = "memory")]
         kv,
         zsets: LockFreeCuckooHash::new(),
-        cluster: RwLock::new(ClusterInfo {
-            me: -1,
+        cluster: tokio::sync::RwLock::new(ClusterInfo {
+            pool: Default::default(),
             peers: vec![],
         }),
+        me: Default::default(),
     });
 
     #[cfg(feature = "tokio_uring")]
