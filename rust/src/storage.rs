@@ -4,7 +4,7 @@ use crate::dto::InsrtRequest;
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::{collections::hash_map::DefaultHasher, net::SocketAddr};
 use tarpc::{client, context};
 use tarpc::tokio_serde::formats::Bincode;
@@ -15,7 +15,7 @@ use rocksdb::WriteBatch;
 
 use std::collections::{BTreeMap, HashSet};
 
-fn hash_key<T>(key: T) -> u64
+pub fn hash_key<T>(key: T) -> u64
 where
     T: Hash,
 {
@@ -24,7 +24,7 @@ where
     hasher.finish()
 }
 
-fn get_shard<T>(key: T, count: u64) -> usize
+pub fn get_shard<T>(key: T, count: u64) -> usize
 where
     T: Hash,
 {
@@ -91,6 +91,7 @@ pub struct Storage {
     pub zsets: LockFreeCuckooHash<String, ZSet>,
     pub cluster: RwLock<ClusterInfo>,
     pub me: AtomicU32,
+    pub count: AtomicU64,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -216,6 +217,16 @@ impl Storage {
         self.insert_kv_in_memory(key, value)
     }
 
+    pub async fn insert_kv_remote(&self, key: &str, value: &str, shard: usize) -> Result<(), ()> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client.add(context::current(), key.to_string(), value.to_string()).await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
     pub fn batch_insert_kv(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
         self.batch_insert_kv_in_memory(kvs)
     }
@@ -228,9 +239,20 @@ impl Storage {
         self.remove_key_in_memory(key)
     }
 
+    pub async fn remove_key_remote(&self, key: &str, shard: usize) -> Result<(), ()> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client.del(context::current(), key.to_string()).await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
     pub async fn update_peers(&self, peers: Vec<String>, me: u32) {
         let mut cluster = self.cluster.write().await;
-        self.me.store(me, std::sync::atomic::Ordering::Relaxed);
+        self.me.store(me - 1, std::sync::atomic::Ordering::Relaxed);
+        self.count.store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);
         cluster.pool = Arc::new(PeerClientPool::new(peers, me).await);
     }
 }

@@ -2,7 +2,7 @@ mod cluster;
 mod dto;
 mod storage;
 use cluster::CachePeerClient;
-use storage::{ClusterInfo, Storage, ZSet};
+use storage::{get_shard, ClusterInfo, Storage, ZSet};
 
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
@@ -33,7 +33,17 @@ use std::path::Path;
 use std::sync::Arc;
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let value = storage.get_kv(key).map_or_else(
+    let shard = get_shard(
+        key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let value = if shard == me {
+        storage.get_kv(key)
+    } else {
+        storage.get_kv_remote(key, shard as usize).await
+    };
+    let value = value.map_or_else(
         || {
             Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
@@ -46,14 +56,24 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 }
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    if let Err(_) = storage.remove_key(key) {
-        return Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap());
+    let shard = get_shard(
+        key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    if shard == me {
+        storage.remove_key(key).unwrap();
+        storage.zsets.remove(key);
+        Ok(Response::new(Body::empty()))
+    } else {
+        match storage.remove_key_remote(key, shard as usize).await {
+            Ok(_) => Ok(Response::new(Body::empty())),
+            Err(_) => Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()),
+        }
     }
-    storage.zsets.remove(key);
-    Ok(Response::new(Body::empty()))
 }
 
 async fn handle_add(
@@ -63,16 +83,22 @@ async fn handle_add(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let kv: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
-    {
-        storage.zsets.remove(&kv.key);
-    }
-    if let Err(_) = storage.insert_kv(&kv.key, &kv.value) {
-        Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap())
-    } else {
+    let shard = get_shard(
+        &kv.key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    if shard == me {
+        storage.insert_kv(&kv.key, &kv.value).unwrap();
         Ok(Response::new(Body::empty()))
+    } else {
+        match storage.insert_kv_remote(&kv.key, &kv.value, shard as usize).await {
+            Ok(_) => Ok(Response::new(Body::empty())),
+            Err(_) => Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()),
+        }
     }
 }
 
@@ -517,6 +543,7 @@ fn main() {
             peers: vec![],
         }),
         me: Default::default(),
+        count: Default::default(),
     });
 
     #[cfg(feature = "tokio_uring")]

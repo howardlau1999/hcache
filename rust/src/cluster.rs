@@ -51,6 +51,7 @@ impl CachePeer for CachePeerServer {
 
     fn del(self, _: tarpc::context::Context, key: String) -> Self::DelFut {
         self.storage.remove_key(key.as_str()).unwrap();
+        self.storage.zsets.remove(key.as_str());
         future::ready(())
     }
 
@@ -102,5 +103,4 @@ pub async fn cluster_client() {
     let addr = "127.0.0.1:58080".parse::<SocketAddr>().unwrap();
     let transport = tarpc::serde_transport::tcp::connect(addr, Bincode::default);
     let client = CachePeerClient::new(client::Config::default(), transport.await.unwrap()).spawn();
-    let hello = client.query(context::current(), "hello".to_string()).await.unwrap();
 }
