@@ -33,14 +33,12 @@ where
 
 pub struct PeerClientPool {
     clients: Vec<Option<Arc<CachePeerClient>>>,
-    me: u32,
 }
 
 impl Default for PeerClientPool {
     fn default() -> Self {
         Self {
             clients: Vec::new(),
-            me: 0,
         }
     }
 }
@@ -61,11 +59,7 @@ impl PeerClientPool {
                 clients.push(Some(Arc::new(client)));
             }
         }
-        Self { clients, me }
-    }
-
-    pub fn count(&self) -> usize {
-        self.clients.len()
+        Self { clients }
     }
 
     pub fn get_client(&self, idx: usize) -> Arc<CachePeerClient> {

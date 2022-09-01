@@ -1,11 +1,10 @@
 mod cluster;
 mod dto;
 mod storage;
-use cluster::CachePeerClient;
-use storage::{get_shard, ClusterInfo, Storage, ZSet};
+use storage::{get_shard, ClusterInfo, Storage};
 
 #[cfg(feature = "memory")]
-use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
+use lockfree_cuckoohash::LockFreeCuckooHash;
 
 #[cfg(feature = "glommio")]
 mod glommio_hyper;
@@ -22,7 +21,6 @@ use monoio_parser::monoio_parser_run;
 use dto::{ScoreRange, ScoreValue};
 
 use hyper::{Body, Method, Request, Response, StatusCode};
-use parking_lot::RwLock;
 
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;

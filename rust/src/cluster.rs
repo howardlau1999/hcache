@@ -131,8 +131,3 @@ pub async fn cluster_server(storage: Arc<Storage>) {
         .await;
 }
 
-pub async fn cluster_client() {
-    let addr = "127.0.0.1:58080".parse::<SocketAddr>().unwrap();
-    let transport = tarpc::serde_transport::tcp::connect(addr, Bincode::default);
-    let client = CachePeerClient::new(client::Config::default(), transport.await.unwrap()).spawn();
-}
