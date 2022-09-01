@@ -1,13 +1,13 @@
 use crate::cluster::CachePeerClient;
-use crate::dto::InsrtRequest;
+use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::Arc;
 use std::{collections::hash_map::DefaultHasher, net::SocketAddr};
-use tarpc::{client, context};
 use tarpc::tokio_serde::formats::Bincode;
+use tarpc::{client, context};
 use tokio::sync::RwLock;
 
 #[cfg(not(feature = "memory"))]
@@ -220,7 +220,9 @@ impl Storage {
     pub async fn insert_kv_remote(&self, key: &str, value: &str, shard: usize) -> Result<(), ()> {
         let pool = &self.cluster.read().await.pool;
         let client = pool.get_client(shard);
-        let res = client.add(context::current(), key.to_string(), value.to_string()).await;
+        let res = client
+            .add(context::current(), key.to_string(), value.to_string())
+            .await;
         match res {
             Ok(_) => Ok(()),
             Err(_) => Err(()),
@@ -239,6 +241,84 @@ impl Storage {
         self.remove_key_in_memory(key)
     }
 
+    pub fn zadd(&self, key: &str, score_value: ScoreValue) {
+        let guard = pin();
+        let zset = self.zsets.get_or_insert(
+            key.to_string(),
+            ZSet {
+                value_to_score: LockFreeCuckooHash::new(),
+                score_to_values: parking_lot::RwLock::new(Default::default()),
+            },
+            &guard,
+        );
+        let value = score_value.value;
+        let new_score = score_value.score;
+        let old_score = zset.value_to_score.get(&value, &guard).copied();
+        if let Some(score) = old_score {
+            if score != new_score {
+                {
+                    // Remove from old score
+                    let mut score_to_values = zset.score_to_values.write();
+
+                    score_to_values.entry(score).and_modify(|values| {
+                        values.write().remove(&value);
+                    });
+                    // Add to new score
+                    score_to_values
+                        .entry(new_score)
+                        .or_insert_with(Default::default)
+                        .write()
+                        .insert(value.clone());
+                }
+                // Modify score
+                zset.value_to_score.insert(value, new_score);
+            }
+        } else {
+            zset.value_to_score.insert(value.clone(), new_score);
+            zset.score_to_values
+                .write()
+                .entry(new_score)
+                .or_insert_with(Default::default)
+                .write()
+                .insert(value);
+        }
+    }
+
+    pub fn zrange(&self, key: &str, score_range: ScoreRange) -> Option<Vec<ScoreValue>> {
+        let guard = pin();
+        let min_score = score_range.min_score;
+        let max_score = score_range.max_score;
+        self.zsets.get(key, &guard).map(|zset| {
+            zset.score_to_values
+                .read()
+                .range(min_score..=max_score)
+                .map(|(score, assoc_values)| {
+                    let assoc_values = assoc_values.read().clone();
+                    assoc_values.into_iter().map(|value| ScoreValue {
+                        score: *score,
+                        value,
+                    })
+                })
+                .flatten()
+                .collect()
+        })
+    }
+
+    pub fn zrmv(&self, key: &str, value: &str) {
+        let guard = pin();
+        if let Some(zset) = self.zsets.get(key, &guard) {
+            let score = zset.value_to_score.remove_with_guard(value, &guard);
+            if let Some(score) = score {
+                zset.score_to_values
+                    .write()
+                    .entry(*score)
+                    .and_modify(|values| {
+                        values.write().remove(value);
+                    });
+            }
+        }
+    }
+
     pub async fn remove_key_remote(&self, key: &str, shard: usize) -> Result<(), ()> {
         let pool = &self.cluster.read().await.pool;
         let client = pool.get_client(shard);
@@ -252,7 +332,8 @@ impl Storage {
     pub async fn update_peers(&self, peers: Vec<String>, me: u32) {
         let mut cluster = self.cluster.write().await;
         self.me.store(me - 1, std::sync::atomic::Ordering::Relaxed);
-        self.count.store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.count
+            .store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);
         cluster.pool = Arc::new(PeerClientPool::new(peers, me).await);
     }
 }

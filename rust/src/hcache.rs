@@ -92,7 +92,10 @@ async fn handle_add(
         storage.insert_kv(&kv.key, &kv.value).unwrap();
         Ok(Response::new(Body::empty()))
     } else {
-        match storage.insert_kv_remote(&kv.key, &kv.value, shard as usize).await {
+        match storage
+            .insert_kv_remote(&kv.key, &kv.value, shard as usize)
+            .await
+        {
             Ok(_) => Ok(Response::new(Body::empty())),
             Err(_) => Ok(Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -115,46 +118,7 @@ async fn handle_zadd(
             .body(Body::empty())
             .unwrap());
     }
-    let guard = pin();
-    let zset = storage.zsets.get_or_insert(
-        key.to_string(),
-        ZSet {
-            value_to_score: LockFreeCuckooHash::new(),
-            score_to_values: RwLock::new(Default::default()),
-        },
-        &guard,
-    );
-    let value = dto.value;
-    let new_score = dto.score;
-    let old_score = zset.value_to_score.get(&value, &guard).copied();
-    if let Some(score) = old_score {
-        if score != new_score {
-            {
-                // Remove from old score
-                let mut score_to_values = zset.score_to_values.write();
-
-                score_to_values.entry(score).and_modify(|values| {
-                    values.write().remove(&value);
-                });
-                // Add to new score
-                score_to_values
-                    .entry(new_score)
-                    .or_insert_with(Default::default)
-                    .write()
-                    .insert(value.clone());
-            }
-            // Modify score
-            zset.value_to_score.insert(value, new_score);
-        }
-    } else {
-        zset.value_to_score.insert(value.clone(), new_score);
-        zset.score_to_values
-            .write()
-            .entry(new_score)
-            .or_insert_with(Default::default)
-            .write()
-            .insert(value);
-    }
+    storage.zadd(key, dto);
     Ok(Response::new(Body::empty()))
 }
 
@@ -165,39 +129,16 @@ async fn handle_zrange(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     match serde_json::from_slice::<ScoreRange>(&data) {
-        Ok(dto) => {
-            let guard = pin();
-            match storage.zsets.get(key, &guard) {
-                Some(zset) => {
-                    let min_score = dto.min_score;
-                    let max_score = dto.max_score;
-                    let values: Vec<_> = zset
-                        .score_to_values
-                        .read()
-                        .range(min_score..=max_score)
-                        .map(|(score, assoc_values)| {
-                            let assoc_values = assoc_values.read().clone();
-                            assoc_values.into_iter().map(|value| ScoreValue {
-                                score: *score,
-                                value,
-                            })
-                        })
-                        .flatten()
-                        .collect();
-                    match serde_json::to_vec(&values) {
-                        Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
-                        Err(_) => Ok(Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Body::empty())
-                            .unwrap()),
-                    }
-                }
-                None => Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .unwrap()),
+        Ok(dto) => match storage.zrange(key, dto) {
+            Some(zset) => {
+                let body = serde_json::to_vec(&zset).unwrap();
+                Ok(Response::new(Body::from(body)))
             }
-        }
+            None => Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap()),
+        },
         Err(_) => Ok(Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(Body::empty())
@@ -210,18 +151,7 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let guard = pin();
-    if let Some(zset) = storage.zsets.get(key, &guard) {
-        let score = zset.value_to_score.remove_with_guard(value, &guard);
-        if let Some(score) = score {
-            zset.score_to_values
-                .write()
-                .entry(*score)
-                .and_modify(|values| {
-                    values.write().remove(value);
-                });
-        }
-    }
+    storage.zrmv(key, value);
     Ok(Response::new(Body::empty()))
 }
 
