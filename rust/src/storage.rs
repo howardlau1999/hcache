@@ -227,12 +227,48 @@ impl Storage {
         self.batch_insert_kv_in_memory(kvs)
     }
 
+    pub async fn batch_insert_kv_remote(&self, kvs: Vec<InsrtRequest>, shard: usize) -> Result<(), ()> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client
+            .batch(context::current(), kvs)
+            .await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
     pub fn list_keys(&self, keys: HashSet<String>) -> Vec<InsrtRequest> {
         self.list_keys_in_memory(keys)
     }
 
+    pub async fn list_keys_remote(&self, keys: Vec<String>, shard: usize) -> Vec<InsrtRequest> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client
+            .list(context::current(), keys)
+            .await;
+        match res {
+            Ok(kvs) => kvs,
+            Err(_) => vec![],
+        }
+    }
+
     pub fn remove_key(&self, key: &str) -> Result<(), ()> {
         self.remove_key_in_memory(key)
+    }
+
+    pub async fn remove_key_remote(&self, key: &str, shard: usize) -> Result<(), ()> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client
+            .del(context::current(), key.to_string())
+            .await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
 
     pub fn zadd(&self, key: &str, score_value: ScoreValue) {
@@ -278,6 +314,18 @@ impl Storage {
         }
     }
 
+    pub async fn zadd_remote(&self, key: &str, score_value: ScoreValue, shard: usize) -> Result<(), ()> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client
+            .zadd(context::current(), key.to_string(), score_value)
+            .await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
     pub fn zrange(&self, key: &str, score_range: ScoreRange) -> Option<Vec<ScoreValue>> {
         let guard = pin();
         let min_score = score_range.min_score;
@@ -298,6 +346,18 @@ impl Storage {
         })
     }
 
+    pub async fn zrange_remote(&self, key: &str, score_range: ScoreRange, shard: usize) -> Option<Vec<ScoreValue>> {
+        let pool = &self.cluster.read().await.pool;
+        let client = pool.get_client(shard);
+        let res = client
+            .zrange(context::current(), key.to_string(), score_range)
+            .await;
+        match res {
+            Ok(values) => values,
+            Err(_) => None,
+        }
+    }
+
     pub fn zrmv(&self, key: &str, value: &str) {
         let guard = pin();
         if let Some(zset) = self.zsets.get(key, &guard) {
@@ -313,10 +373,12 @@ impl Storage {
         }
     }
 
-    pub async fn remove_key_remote(&self, key: &str, shard: usize) -> Result<(), ()> {
+    pub async fn zrmv_remote(&self, key: &str, value: &str, shard: usize) -> Result<(), ()> {
         let pool = &self.cluster.read().await.pool;
         let client = pool.get_client(shard);
-        let res = client.del(context::current(), key.to_string()).await;
+        let res = client
+            .zrmv(context::current(), key.to_string(), value.to_string())
+            .await;
         match res {
             Ok(_) => Ok(()),
             Err(_) => Err(()),

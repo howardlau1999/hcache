@@ -26,7 +26,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -110,14 +110,23 @@ async fn handle_zadd(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
-    if storage.get_kv(key).is_some() {
-        return Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap());
+    let shard = get_shard(
+        key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    if shard == me {
+        storage.zadd(key, dto);
+        Ok(Response::new(Body::empty()))
+    } else {
+        match storage.zadd_remote(key, dto, shard as usize).await {
+            Ok(_) => Ok(Response::new(Body::empty())),
+            Err(_) => Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()),
+        }
     }
-    storage.zadd(key, dto);
-    Ok(Response::new(Body::empty()))
 }
 
 async fn handle_zrange(
@@ -126,22 +135,30 @@ async fn handle_zrange(
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    match serde_json::from_slice::<ScoreRange>(&data) {
-        Ok(dto) => match storage.zrange(key, dto) {
-            Some(zset) => {
-                let body = serde_json::to_vec(&zset).unwrap();
-                Ok(Response::new(Body::from(body)))
-            }
-            None => Ok(Response::builder()
+    let dto = serde_json::from_slice::<ScoreRange>(&data).unwrap();
+    let shard = get_shard(
+        key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let value = if shard == me {
+        storage.zrange(key, dto)
+    } else {
+        storage.zrange_remote(key, dto, shard as usize).await
+    };
+    value.map_or_else(
+        || {
+            Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty())
-                .unwrap()),
+                .unwrap())
         },
-        Err(_) => Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap()),
-    }
+        |value| {
+            Ok(Response::new(Body::from(
+                serde_json::to_string(&value).unwrap(),
+            )))
+        },
+    )
 }
 
 async fn handle_zrmv(
@@ -149,8 +166,23 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    storage.zrmv(key, value);
-    Ok(Response::new(Body::empty()))
+    let shard = get_shard(
+        key,
+        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+    ) as u32;
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    if shard == me {
+        storage.zrmv(key, value);
+        Ok(Response::new(Body::empty()))
+    } else {
+        match storage.zrmv_remote(key, value, shard as usize).await {
+            Ok(_) => Ok(Response::new(Body::empty())),
+            Err(_) => Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()),
+        }
+    }
 }
 
 async fn handle_batch(
@@ -160,21 +192,31 @@ async fn handle_batch(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
 
-    serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data).map_or(
-        Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap()),
-        |kvs| {
-            Ok(match storage.batch_insert_kv(kvs) {
-                Ok(_) => Response::new(Body::empty()),
-                Err(_) => Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::empty())
-                    .unwrap(),
-            })
-        },
-    )
+    let kvs = serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data).unwrap();
+    let peers_count = storage.count.load(std::sync::atomic::Ordering::Relaxed);
+    let sharded = HashMap::<u32, Vec<dto::InsrtRequest>>::new();
+    let mut sharded = kvs.into_iter().fold(sharded, |mut acc, kv| {
+        let shard = get_shard(&kv.key, peers_count) as u32;
+        acc.entry(shard).or_insert_with(Vec::new).push(kv);
+        acc
+    });
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let mut futures = Vec::new();
+    let my_keys = sharded.remove(&me).unwrap_or_default();
+    for (shard, kvs) in sharded {
+        let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+        let storage = storage.clone();
+        if shard != me {
+            futures.push(tokio::task::spawn_local(async move {
+                storage.batch_insert_kv_remote(kvs, shard as usize).await
+            }));
+        }
+    }
+    storage.batch_insert_kv(my_keys).unwrap();
+    for f in futures {
+        f.await.unwrap().unwrap();
+    }
+    Ok(Response::new(Body::empty()))
 }
 
 async fn handle_list(
@@ -183,29 +225,36 @@ async fn handle_list(
 ) -> Result<Response<Body>, hyper::Error> {
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
-    serde_json::from_slice(&data).map_or(
-        Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap()),
-        |keys: Vec<String>| {
-            let kvs = storage.list_keys(HashSet::from_iter(keys));
-            if kvs.len() != 0 {
-                match serde_json::to_vec(&kvs) {
-                    Ok(json_bytes) => Ok(Response::new(Body::from(json_bytes))),
-                    Err(_) => Ok(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::empty())
-                        .unwrap()),
-                }
-            } else {
-                Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .unwrap())
-            }
-        },
-    )
+    let keys = serde_json::from_slice::<Vec<String>>(&data).unwrap();
+    let peers_count = storage.count.load(std::sync::atomic::Ordering::Relaxed);
+    let sharded = HashMap::<u32, HashSet<String>>::new();
+    let mut sharded = keys.into_iter().fold(sharded, |mut acc, key| {
+        let shard = get_shard(&key, peers_count) as u32;
+        acc.entry(shard).or_insert_with(HashSet::new).insert(key);
+        acc
+    });
+    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let mut futures = Vec::new();
+    let my_keys = sharded.remove(&me).unwrap_or_default();
+    for (shard, keys) in sharded {
+        let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+        let storage = storage.clone();
+        if shard != me {
+            futures.push(tokio::task::spawn_local(async move {
+                storage
+                    .list_keys_remote(keys.into_iter().collect(), shard as usize)
+                    .await
+            }));
+        }
+    }
+    let mut result = storage.list_keys(my_keys);
+    for handle in futures {
+        let mut keys = handle.await.unwrap();
+        result.append(&mut keys);
+    }
+    Ok(Response::new(Body::from(
+        serde_json::to_string(&result).unwrap(),
+    )))
 }
 
 async fn handle_updatecluster(
@@ -331,8 +380,21 @@ fn tokio_local_run(storage: Arc<Storage>) {
                     .await;
             })
         });
+
         worker_threads.push(worker);
     }
+    let rpc_worker = std::thread::spawn(move || {
+        println!("Starting RPC worker");
+        let local_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        local_rt.block_on(async move {
+            let local = tokio::task::LocalSet::new();
+            local.run_until(cluster::cluster_server(storage)).await;
+        })
+    });
+    worker_threads.push(rpc_worker);
     for worker in worker_threads {
         worker.join().unwrap();
     }

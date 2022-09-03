@@ -4,7 +4,7 @@ use futures::{
 };
 use std::{net::SocketAddr, sync::Arc};
 use tarpc::{
-    client, context,
+    context,
     server::{self, incoming::Incoming, Channel},
     tokio_serde::formats::Bincode,
 };
@@ -21,7 +21,7 @@ pub trait CachePeer {
     async fn query(key: String) -> Option<String>;
     async fn add(key: String, value: String) -> ();
     async fn del(key: String) -> ();
-    async fn list(keys: Vec<String>) -> Vec<String>;
+    async fn list(keys: Vec<String>) -> Vec<InsrtRequest>;
     async fn batch(kvs: Vec<InsrtRequest>) -> ();
     async fn zadd(key: String, score_value: ScoreValue) -> ();
     async fn zrange(key: String, score_range: ScoreRange) -> Option<Vec<ScoreValue>>;
@@ -40,7 +40,7 @@ impl CachePeer for CachePeerServer {
     type QueryFut = Ready<Option<String>>;
     type AddFut = Ready<()>;
     type DelFut = Ready<()>;
-    type ListFut = Ready<Vec<String>>;
+    type ListFut = Ready<Vec<InsrtRequest>>;
     type BatchFut = Ready<()>;
     type ZaddFut = Ready<()>;
     type ZrangeFut = Ready<Option<Vec<ScoreValue>>>;
@@ -67,7 +67,7 @@ impl CachePeer for CachePeerServer {
         let mut result = Vec::new();
         for key in keys {
             if let Some(value) = self.storage.get_kv(key.as_str()) {
-                result.push(value);
+                result.push(InsrtRequest { key, value });
             }
         }
         future::ready(result)
@@ -130,4 +130,3 @@ pub async fn cluster_server(storage: Arc<Storage>) {
         .for_each(|_| async {})
         .await;
 }
-
