@@ -302,27 +302,32 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
         tokio::fs::File::create(loading_marker_path).await.unwrap();
-        for init_path in init_paths.split(",") {
-            let db_path = Path::new(init_path);
-            let mut options = Options::default();
-            options.create_if_missing(true);
-            options.set_allow_mmap_reads(true);
-            options.set_allow_mmap_writes(true);
-            options.set_unordered_write(true);
-            options.set_use_adaptive_mutex(true);
-            #[cfg(feature = "memory")]
-            if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
-                init_load_kv(
-                    db,
-                    &storage.kv,
-                    storage.count.load(std::sync::atomic::Ordering::Relaxed),
-                    storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
-                );
+        std::thread::spawn(move || {
+            for init_path in init_paths.split(",") {
+                let db_path = Path::new(init_path);
+                let mut options = Options::default();
+                options.create_if_missing(true);
+                options.set_allow_mmap_reads(true);
+                options.set_allow_mmap_writes(true);
+                options.set_unordered_write(true);
+                options.set_use_adaptive_mutex(true);
+                #[cfg(feature = "memory")]
+                if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
+                    init_load_kv(
+                        db,
+                        &storage.kv,
+                        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+                        storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
+                    );
+                }
             }
-        }
-        tokio::fs::File::create(loaded_marker_path).await.unwrap();
+            std::fs::File::create(loaded_marker_path).unwrap();
+        });
     }
-    Ok(Response::new(Body::from("ok")))
+    Ok(Response::builder()
+        .status(StatusCode::SERVICE_UNAVAILABLE)
+        .body(Body::empty())
+        .unwrap())
 }
 
 #[cfg(not(feature = "monoio_parser"))]
