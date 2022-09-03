@@ -305,9 +305,12 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
         tokio::fs::File::create(loading_marker_path).await.unwrap();
-        std::thread::spawn(move || {
-            for init_path in init_paths.split(",") {
-                let db_path = Path::new(init_path);
+        for init_path in init_paths.split(",") {
+            let init_path = String::from(init_path);
+            let storage = storage.clone();
+            let mut threads = Vec::new();
+            threads.push(std::thread::spawn(move || {
+                let db_path = Path::new(init_path.as_str());
                 let mut options = Options::default();
                 options.create_if_missing(true);
                 options.set_allow_mmap_reads(true);
@@ -323,17 +326,16 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
                     );
                 }
+            }));
+            for t in threads {
+                t.join().unwrap();
             }
             std::fs::File::create(loaded_marker_path).unwrap();
-        });
+        }
     } else {
         tokio::fs::File::create(loaded_marker_path).await.unwrap();
-        return Ok(Response::new(Body::from("ok")));
     }
-    Ok(Response::builder()
-        .status(StatusCode::SERVICE_UNAVAILABLE)
-        .body(Body::empty())
-        .unwrap())
+    Ok(Response::new(Body::from("ok")))
 }
 
 #[cfg(not(feature = "monoio_parser"))]
