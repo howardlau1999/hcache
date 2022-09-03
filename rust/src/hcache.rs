@@ -26,11 +26,11 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use rocksdb::WriteBatch;
 
 use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
-use tokio::io::AsyncWriteExt;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let shard = get_shard(
@@ -272,13 +272,24 @@ async fn handle_updatecluster(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
-    let mut cluster_json = tokio::fs::File::create("/etc/hcache-cluster.json").await.unwrap();
+    let mut cluster_json = tokio::fs::File::create("/etc/hcache-cluster.json")
+        .await
+        .unwrap();
     cluster_json.write_all(&data).await.unwrap();
     storage.update_peers(info.hosts, info.index).await;
     Ok(Response::new(Body::from("ok")))
 }
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
+    let cluster_info_json = std::fs::File::open("/etc/hcache-cluster.json");
+    if let Ok(mut cluster_info_json) = cluster_info_json {
+        let mut data = String::new();
+        cluster_info_json.read_to_string(&mut data).unwrap();
+        let cluster_info: dto::UpdateCluster = serde_json::from_str(data.as_str()).unwrap();
+        storage
+            .update_peers(cluster_info.hosts, cluster_info.index)
+            .await;
+    }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
         for init_path in init_paths.split(",") {
             let db_path = Path::new(init_path);
@@ -365,18 +376,6 @@ fn tokio_local_run(storage: Arc<Storage>) {
                 let local = tokio::task::LocalSet::new();
                 local
                     .run_until(async move {
-                        if core_id.id == 0 {
-                            let cluster_info_json = std::fs::File::open("/etc/hcache-cluster.json");
-                            if let Ok(mut cluster_info_json) = cluster_info_json {
-                                let mut data = String::new();
-                                cluster_info_json.read_to_string(&mut data).unwrap();
-                                let cluster_info: dto::UpdateCluster =
-                                    serde_json::from_str(data.as_str()).unwrap();
-                                storage
-                                    .update_peers(cluster_info.hosts, cluster_info.index)
-                                    .await;
-                            }
-                        }
                         let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
                         let socket = tokio::net::TcpSocket::new_v4().unwrap();
                         socket.set_reuseport(true).unwrap();
