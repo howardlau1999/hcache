@@ -210,6 +210,7 @@ impl Storage {
     }
 
     pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
+        self.zsets.remove(key);
         self.insert_kv_in_memory(key, value)
     }
 
