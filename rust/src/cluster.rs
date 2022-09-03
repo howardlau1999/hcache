@@ -125,6 +125,7 @@ pub async fn cluster_server(storage: Arc<Storage>) {
             channel.execute(server.serve())
         })
         // Max 10 channels.
+        .buffer_unordered(1000)
         .for_each(|_| async {})
         .await;
 }
