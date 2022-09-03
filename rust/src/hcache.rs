@@ -268,15 +268,12 @@ async fn handle_list(
 
 async fn handle_updatecluster(
     body: Body,
-    storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    let info = serde_json::from_slice::<dto::UpdateCluster>(&data).unwrap();
     let mut cluster_json = tokio::fs::File::create("/etc/hcache-cluster.json")
         .await
         .unwrap();
     cluster_json.write_all(&data).await.unwrap();
-    storage.update_peers(info.hosts, info.index).await;
     Ok(Response::new(Body::from("ok")))
 }
 
@@ -343,7 +340,7 @@ async fn hyper_handler(
             "list" => handle_list(req, storage).await,
             "zadd" => handle_zadd(path[2], req.into_body(), storage).await,
             "zrange" => handle_zrange(path[2], req.into_body(), storage).await,
-            "updateCluster" => handle_updatecluster(req.into_body(), storage).await,
+            "updateCluster" => handle_updatecluster(req.into_body()).await,
             _ => Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty())
