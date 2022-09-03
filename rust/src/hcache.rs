@@ -305,10 +305,10 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
         tokio::fs::File::create(loading_marker_path).await.unwrap();
+        let mut threads = Vec::new();
         for init_path in init_paths.split(",") {
             let init_path = String::from(init_path);
             let storage = storage.clone();
-            let mut threads = Vec::new();
             threads.push(std::thread::spawn(move || {
                 let db_path = Path::new(init_path.as_str());
                 let mut options = Options::default();
@@ -327,11 +327,11 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                     );
                 }
             }));
-            for t in threads {
-                t.join().unwrap();
-            }
-            std::fs::File::create(loaded_marker_path).unwrap();
         }
+        for t in threads {
+            t.join().unwrap();
+        }
+        std::fs::File::create(loaded_marker_path).unwrap();
     } else {
         tokio::fs::File::create(loaded_marker_path).await.unwrap();
     }
