@@ -6,6 +6,6 @@ if [ -z $IMAGE_ID ]; then
     exit
 fi
 ros-cdk synth
-jq -r ".Parameters.ecs_image_id.Default = \"$IMAGE_ID\"" cdk.out/SubmissionStack.template.json | tee application.ros.json
+jq -r ".Parameters.ecs_image_id.Default = \"$IMAGE_ID\"" submission.template.json | tee application.ros.json
 zip ${IMAGE_ID}.zip application.ros.json
 cp ${IMAGE_ID}.zip latest.zip

@@ -108,7 +108,7 @@ const startupScriptFromCleanImage = `
         # 自动重启脚本
         cat <<EOF > ~/auto-restart.sh
 #!/bin/bash
-export INIT_DIR=/data
+export INIT_DIRS=/init_data/data1,/init_data/data2,/init_data/data3
 while true; do
   /usr/bin/hcache --reserve-memory 512M
 done
