@@ -25,7 +25,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -318,7 +318,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                 options.set_unordered_write(true);
                 options.set_use_adaptive_mutex(true);
                 #[cfg(feature = "memory")]
-                if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
+                if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path) {
                     init_load_kv(
                         db,
                         &storage.kv,
@@ -542,7 +542,7 @@ fn monoio_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "memory")]
 fn init_load_kv(
-    db: DBWithThreadMode<MultiThreaded>,
+    db: DBWithThreadMode<SingleThreaded>,
     kv: &LockFreeCuckooHash<String, String>,
     peers: u64,
     me: usize,
