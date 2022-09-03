@@ -50,6 +50,7 @@ impl PeerClientPool {
             if idx == (me - 1) as usize {
                 clients.push(None);
             } else {
+                println!("Connecting to peer {}", peers[idx]);
                 let hostport = peers[idx].clone() + ":58080";
                 let addr = hostport.parse::<SocketAddr>().unwrap();
                 let transport = tarpc::serde_transport::tcp::connect(addr, Bincode::default);
@@ -57,6 +58,7 @@ impl PeerClientPool {
                     CachePeerClient::new(client::Config::default(), transport.await.unwrap())
                         .spawn();
                 clients.push(Some(Arc::new(client)));
+                println!("Connected to peer {}", peers[idx]);
             }
         }
         Self { clients }
