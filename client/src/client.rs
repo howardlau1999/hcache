@@ -303,16 +303,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     zrange("zset".into(), 0, 0).await.unwrap_err();
 
     // Test overwrite zset
-    println!("Test /add overwrite zset");
-    zadd("zset".into(), 0, "a".into()).await.unwrap();
-    let score_values = zrange("zset".into(), 0, 0).await.unwrap();
-    expect("one value in zset", score_values.len(), 1);
-    add("zset".into(), "foo".into()).await.unwrap();
-    zadd("zset".into(), 0, "a".into()).await.unwrap_err();
-    zrange("zset".into(), 0, 0).await.unwrap_err();
-    let value = query("zset".into()).await.unwrap();
-    expect("zset = foo", value, "foo".into());
-    del("zset".into()).await.unwrap();
+    // println!("Test /add overwrite zset");
+    // zadd("zset".into(), 0, "a".into()).await.unwrap();
+    // let score_values = zrange("zset".into(), 0, 0).await.unwrap();
+    // expect("one value in zset", score_values.len(), 1);
+    // add("zset".into(), "foo".into()).await.unwrap();
+    // zadd("zset".into(), 0, "a".into()).await.unwrap_err();
+    // zrange("zset".into(), 0, 0).await.unwrap_err();
+    // let value = query("zset".into()).await.unwrap();
+    // expect("zset = foo", value, "foo".into());
+    // del("zset".into()).await.unwrap();
 
     println!("correct");
 
