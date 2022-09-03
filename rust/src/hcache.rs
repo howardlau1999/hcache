@@ -266,9 +266,7 @@ async fn handle_list(
     }
 }
 
-async fn handle_updatecluster(
-    body: Body,
-) -> Result<Response<Body>, hyper::Error> {
+async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let mut cluster_json = tokio::fs::File::create("/etc/hcache-cluster.json")
         .await
@@ -281,13 +279,29 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     let cluster_info_json = std::fs::File::open("/etc/hcache-cluster.json");
     if let Ok(mut cluster_info_json) = cluster_info_json {
         let mut data = String::new();
-        cluster_info_json.read_to_string(&mut data).unwrap();
-        let cluster_info: dto::UpdateCluster = serde_json::from_str(data.as_str()).unwrap();
-        storage
-            .update_peers(cluster_info.hosts, cluster_info.index)
-            .await;
+        if let Ok(_) = cluster_info_json.read_to_string(&mut data) {
+            if let Ok(cluster_info) = serde_json::from_str::<dto::UpdateCluster>(data.as_str()) {
+                if storage.me.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                    storage
+                        .update_peers(cluster_info.hosts, cluster_info.index)
+                        .await;
+                }
+            }
+        }
+    }
+    let loaded_marker_path = Path::new("/etc/hcache-loaded");
+    if loaded_marker_path.exists() {
+        return Ok(Response::new(Body::from("ok")));
+    }
+    let loading_marker_path = Path::new("/etc/hcache-loading");
+    if loading_marker_path.exists() {
+        return Ok(Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::empty())
+            .unwrap());
     }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
+        tokio::fs::File::create(loading_marker_path).await.unwrap();
         for init_path in init_paths.split(",") {
             let db_path = Path::new(init_path);
             let mut options = Options::default();
@@ -298,20 +312,15 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             options.set_use_adaptive_mutex(true);
             #[cfg(feature = "memory")]
             if let Ok(db) = DBWithThreadMode::<MultiThreaded>::open(&options, db_path) {
-                let marker_file_path = db_path.join(".loaded");
-                if !marker_file_path.exists() {
-                    if let Err(_) = std::fs::write(marker_file_path, "") {
-                        println!("Failed to write marker file");
-                    }
-                    init_load_kv(
-                        db,
-                        &storage.kv,
-                        storage.count.load(std::sync::atomic::Ordering::Relaxed),
-                        storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
-                    );
-                }
+                init_load_kv(
+                    db,
+                    &storage.kv,
+                    storage.count.load(std::sync::atomic::Ordering::Relaxed),
+                    storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
+                );
             }
         }
+        tokio::fs::File::create(loaded_marker_path).await.unwrap();
     }
     Ok(Response::new(Body::from("ok")))
 }
