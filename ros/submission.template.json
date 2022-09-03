@@ -231,18 +231,18 @@
                             "Fn::Join": [
                                 "",
                                 [
-                                    "#!/bin/sh \n",
+                                    "#!/bin/sh\n",
                                     "nas_url='",
                                     {
                                         "Ref": "nas_url"
                                     },
-                                    "' \n",
+                                    "'\n",
                                     "sudo mkdir /nas\n",
                                     "sudo mount -t nfs -o vers=3,nolock,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport \"${nas_url}\"  /nas \n",
                                     "sleep 15 \n",
                                     "################# shell 示例 - 启动服务 ################# \n",
-                                    "sudo mkdir /init_data",
-                                    "sudo cp -r /nas/* /init_data",
+                                    "sudo mkdir /init_data \n",
+                                    "sudo cp -r /nas/* /init_data \n",
                                     "cd ~ && bash start.sh \n",
                                     "ros-notify \n"
                                 ]
