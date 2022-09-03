@@ -252,9 +252,16 @@ async fn handle_list(
         let mut keys = handle.await.unwrap();
         result.append(&mut keys);
     }
-    Ok(Response::new(Body::from(
-        serde_json::to_string(&result).unwrap(),
-    )))
+    if result.is_empty() {
+        Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap())
+    } else {
+        Ok(Response::new(Body::from(
+            serde_json::to_string(&result).unwrap(),
+        )))
+    }
 }
 
 async fn handle_updatecluster(
