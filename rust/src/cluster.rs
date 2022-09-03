@@ -5,7 +5,7 @@ use futures::{
 use std::{net::SocketAddr, sync::Arc};
 use tarpc::{
     context,
-    server::{self, incoming::Incoming, Channel},
+    server::{self, Channel},
     tokio_serde::formats::Bincode,
 };
 
@@ -122,7 +122,7 @@ pub async fn cluster_server(storage: Arc<Storage>) {
                 addr: channel.transport().peer_addr().unwrap(),
                 storage: storage.clone(),
             };
-            channel.execute(server.serve())
+            channel.requests().execute(server.serve())
         })
         // Max 10 channels.
         .buffer_unordered(1000)
