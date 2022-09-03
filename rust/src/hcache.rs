@@ -326,6 +326,9 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
             std::fs::File::create(loaded_marker_path).unwrap();
         });
+    } else {
+        tokio::fs::File::create(loaded_marker_path).await.unwrap();
+        return Ok(Response::new(Body::from("ok")));
     }
     Ok(Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
