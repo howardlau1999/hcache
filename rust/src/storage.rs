@@ -3,7 +3,7 @@ use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicBool};
 use std::sync::Arc;
 use std::{collections::hash_map::DefaultHasher, net::SocketAddr};
 use tarpc::tokio_serde::formats::Bincode;
@@ -94,6 +94,7 @@ pub struct Storage {
     pub cluster: RwLock<ClusterInfo>,
     pub me: AtomicU32,
     pub count: AtomicU64,
+    pub peer_updated: AtomicBool,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -404,6 +405,7 @@ impl Storage {
 
     pub async fn update_peers(&self, peers: Vec<String>, me: u32) {
         let mut cluster = self.cluster.write().await;
+        self.peer_updated.store(true, std::sync::atomic::Ordering::SeqCst);
         self.me.store(me - 1, std::sync::atomic::Ordering::Relaxed);
         self.count
             .store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);

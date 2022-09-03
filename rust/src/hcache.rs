@@ -281,7 +281,10 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         let mut data = String::new();
         if let Ok(_) = cluster_info_json.read_to_string(&mut data) {
             if let Ok(cluster_info) = serde_json::from_str::<dto::UpdateCluster>(data.as_str()) {
-                if storage.me.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                if !storage
+                    .peer_updated
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
                     storage
                         .update_peers(cluster_info.hosts, cluster_info.index)
                         .await;
@@ -585,6 +588,7 @@ fn main() {
         }),
         me: Default::default(),
         count: Default::default(),
+        peer_updated: Default::default(),
     });
 
     #[cfg(feature = "tokio_uring")]
