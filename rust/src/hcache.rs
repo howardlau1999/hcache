@@ -296,15 +296,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     if loaded_marker_path.exists() {
         return Ok(Response::new(Body::from("ok")));
     }
-    let loading_marker_path = Path::new("/etc/hcache-loading");
-    if loading_marker_path.exists() {
-        return Ok(Response::builder()
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Body::empty())
-            .unwrap());
-    }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
-        tokio::fs::File::create(loading_marker_path).await.unwrap();
         let mut threads = Vec::new();
         for init_path in init_paths.split(",") {
             let init_path = String::from(init_path);
@@ -331,10 +323,8 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         for t in threads {
             t.join().unwrap();
         }
-        std::fs::File::create(loaded_marker_path).unwrap();
-    } else {
-        tokio::fs::File::create(loaded_marker_path).await.unwrap();
     }
+    std::fs::File::create(loaded_marker_path).unwrap();
     Ok(Response::new(Body::from("ok")))
 }
 
