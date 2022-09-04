@@ -45,18 +45,18 @@ impl PeerClientQueue {
     }
 
     pub async fn get_client(&self) -> Arc<CachePeerClient> {
-        if self.clients.lock().await.is_empty() {
+        let mut clients = self.clients.lock().await;
+        if clients.is_empty() {
             loop {
                 if let Ok(transport) =
                     tarpc::serde_transport::tcp::connect(self.addr, Bincode::default).await
                 {
                     let client = CachePeerClient::new(client::Config::default(), transport).spawn();
-                    self.clients.lock().await.push(Arc::new(client));
+                    clients.push(Arc::new(client));
                     break;
                 }
             }
         }
-        let clients = self.clients.lock().await;
         clients[0].clone()
     }
 
