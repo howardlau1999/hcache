@@ -56,13 +56,11 @@ impl PeerClientQueue {
                 }
             }
         }
-        let mut clients = self.clients.lock().await;
-        clients.pop().unwrap()
+        let clients = self.clients.lock().await;
+        clients[0].clone()
     }
 
-    pub async fn put_client(&self, client: Arc<CachePeerClient>) {
-        let mut clients = self.clients.lock().await;
-        clients.push(client);
+    pub async fn put_client(&self, _: Arc<CachePeerClient>) {
     }
 }
 
