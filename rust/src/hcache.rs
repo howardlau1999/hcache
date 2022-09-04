@@ -25,7 +25,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded};
+use rocksdb::{DBWithThreadMode, Options, SingleThreaded};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -268,11 +268,12 @@ async fn handle_list(
 
 async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    let mut cluster_json = tokio::fs::File::create("/etc/hcache-cluster.json")
-        .await
-        .unwrap();
-    cluster_json.write_all(&data).await.unwrap();
-    Ok(Response::new(Body::from("ok")))
+    if let Ok(mut cluster_json) = tokio::fs::File::create("/etc/hcache-cluster.json").await {
+        cluster_json.write_all(&data).await.unwrap();
+        Ok(Response::new(Body::from("ok")))
+    } else {
+        Ok(Response::new(Body::from("fail")))
+    }
 }
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
@@ -321,11 +322,14 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }));
         }
         for t in threads {
-            t.join().unwrap();
+            if let Ok(_) = t.join() {}
         }
     }
-    std::fs::File::create(loaded_marker_path).unwrap();
-    Ok(Response::new(Body::from("ok")))
+    if let Ok(_) = tokio::fs::File::create(loaded_marker_path).await {
+        Ok(Response::new(Body::from("ok")))
+    } else {
+        Ok(Response::new(Body::from("fail")))
+    }
 }
 
 #[cfg(not(feature = "monoio_parser"))]
@@ -548,12 +552,14 @@ fn init_load_kv(
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
-        unsafe {
-            let key = String::from_utf8_unchecked(key.unwrap_unchecked().to_vec());
-            let value = String::from_utf8_unchecked(value.unwrap_unchecked().to_vec());
-            if get_shard(&key, peers) == me {
-                kv.insert(key, value);
-                count += 1;
+        if let (Some(key), Some(value)) = (key, value) {
+            unsafe {
+                let key = String::from_utf8_unchecked(key.to_vec());
+                let value = String::from_utf8_unchecked(value.to_vec());
+                if get_shard(&key, peers) == me {
+                    kv.insert(key, value);
+                    count += 1;
+                }
             }
         }
         iter.next();

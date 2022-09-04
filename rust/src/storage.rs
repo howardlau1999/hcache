@@ -3,7 +3,7 @@ use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicBool};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::Arc;
 use std::{collections::hash_map::DefaultHasher, net::SocketAddr};
 use tarpc::tokio_serde::formats::Bincode;
@@ -53,17 +53,15 @@ impl PeerClientPool {
                 println!("Connecting to peer {}", peers[idx]);
                 let hostport = peers[idx].clone() + ":58080";
                 let addr = hostport.parse::<SocketAddr>().unwrap();
-                loop {
-                    if let Ok(transport) =
-                        tarpc::serde_transport::tcp::connect(addr, Bincode::default).await
-                    {
-                        let client =
-                            CachePeerClient::new(client::Config::default(), transport).spawn();
-                        clients.push(Some(Arc::new(client)));
-                        println!("Connected to peer {}", peers[idx]);
-                        break;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                if let Ok(transport) =
+                    tarpc::serde_transport::tcp::connect(addr, Bincode::default).await
+                {
+                    let client = CachePeerClient::new(client::Config::default(), transport).spawn();
+                    clients.push(Some(Arc::new(client)));
+                    println!("Connected to peer {}", peers[idx]);
+                } else {
+                    clients.push(None);
                 }
             }
         }
@@ -405,7 +403,8 @@ impl Storage {
 
     pub async fn update_peers(&self, peers: Vec<String>, me: u32) {
         let mut cluster = self.cluster.write().await;
-        self.peer_updated.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.peer_updated
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.me.store(me - 1, std::sync::atomic::Ordering::Relaxed);
         self.count
             .store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);
