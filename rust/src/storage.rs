@@ -31,8 +31,43 @@ where
     (hash_key(key) % count) as usize
 }
 
+pub struct PeerClientQueue {
+    pub addr: SocketAddr,
+    pub clients: tokio::sync::Mutex<Vec<Arc<CachePeerClient>>>,
+}
+
+impl PeerClientQueue {
+    pub fn new(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            clients: tokio::sync::Mutex::new(vec![]),
+        }
+    }
+
+    pub async fn get_client(&self) -> Arc<CachePeerClient> {
+        if self.clients.lock().await.is_empty() {
+            loop {
+                if let Ok(transport) =
+                    tarpc::serde_transport::tcp::connect(self.addr, Bincode::default).await
+                {
+                    let client = CachePeerClient::new(client::Config::default(), transport).spawn();
+                    self.clients.lock().await.push(Arc::new(client));
+                    break;
+                }
+            }
+        }
+        let mut clients = self.clients.lock().await;
+        clients.pop().unwrap()
+    }
+
+    pub async fn put_client(&self, client: Arc<CachePeerClient>) {
+        let mut clients = self.clients.lock().await;
+        clients.push(client);
+    }
+}
+
 pub struct PeerClientPool {
-    clients: Vec<Option<Arc<CachePeerClient>>>,
+    clients: Vec<PeerClientQueue>,
 }
 
 impl Default for PeerClientPool {
@@ -47,29 +82,20 @@ impl PeerClientPool {
     pub async fn new(peers: Vec<String>, me: u32) -> Self {
         let mut clients = Vec::new();
         for idx in 0..peers.len() {
-            if idx == (me - 1) as usize {
-                clients.push(None);
-            } else {
-                println!("Connecting to peer {}", peers[idx]);
-                let hostport = peers[idx].clone() + ":58080";
-                let addr = hostport.parse::<SocketAddr>().unwrap();
-
-                if let Ok(transport) =
-                    tarpc::serde_transport::tcp::connect(addr, Bincode::default).await
-                {
-                    let client = CachePeerClient::new(client::Config::default(), transport).spawn();
-                    clients.push(Some(Arc::new(client)));
-                    println!("Connected to peer {}", peers[idx]);
-                } else {
-                    clients.push(None);
-                }
-            }
+            let hostport = peers[idx].clone() + ":58080";
+            let addr = hostport.parse::<SocketAddr>().unwrap();
+            let client = PeerClientQueue::new(addr);
+            clients.push(client);
         }
         Self { clients }
     }
 
-    pub fn get_client(&self, idx: usize) -> Arc<CachePeerClient> {
-        self.clients[idx].as_ref().unwrap().clone()
+    pub async fn get_client(&self, idx: usize) -> Arc<CachePeerClient> {
+        self.clients[idx].get_client().await
+    }
+
+    pub async fn put_client(&self, idx: usize, client: Arc<CachePeerClient>) {
+        self.clients[idx].put_client(client).await;
     }
 }
 
@@ -205,11 +231,21 @@ impl Storage {
     }
 
     pub async fn get_kv_remote(&self, key: &str, shard: usize) -> Option<String> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client.query(context::current(), key.to_string()).await;
         match res {
-            Ok(value) => value,
+            Ok(value) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                value
+            }
             Err(_) => None,
         }
     }
@@ -220,13 +256,23 @@ impl Storage {
     }
 
     pub async fn insert_kv_remote(&self, key: &str, value: &str, shard: usize) -> Result<(), ()> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client
             .add(context::current(), key.to_string(), value.to_string())
             .await;
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -240,11 +286,21 @@ impl Storage {
         kvs: Vec<InsrtRequest>,
         shard: usize,
     ) -> Result<(), ()> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client.batch(context::current(), kvs).await;
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -254,11 +310,21 @@ impl Storage {
     }
 
     pub async fn list_keys_remote(&self, keys: Vec<String>, shard: usize) -> Vec<InsrtRequest> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client.list(context::current(), keys).await;
         match res {
-            Ok(kvs) => kvs,
+            Ok(kvs) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                kvs
+            }
             Err(_) => vec![],
         }
     }
@@ -268,11 +334,21 @@ impl Storage {
     }
 
     pub async fn remove_key_remote(&self, key: &str, shard: usize) -> Result<(), ()> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client.del(context::current(), key.to_string()).await;
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -326,13 +402,23 @@ impl Storage {
         score_value: ScoreValue,
         shard: usize,
     ) -> Result<(), ()> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client
             .zadd(context::current(), key.to_string(), score_value)
             .await;
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -363,13 +449,23 @@ impl Storage {
         score_range: ScoreRange,
         shard: usize,
     ) -> Option<Vec<ScoreValue>> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client
             .zrange(context::current(), key.to_string(), score_range)
             .await;
         match res {
-            Ok(values) => values,
+            Ok(values) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                values
+            }
             Err(_) => None,
         }
     }
@@ -390,13 +486,23 @@ impl Storage {
     }
 
     pub async fn zrmv_remote(&self, key: &str, value: &str, shard: usize) -> Result<(), ()> {
-        let pool = &self.cluster.read().await.pool;
-        let client = pool.get_client(shard);
+        let client = {
+            let pool = &self.cluster.read().await.pool;
+            pool.get_client(shard).await
+        };
         let res = client
             .zrmv(context::current(), key.to_string(), value.to_string())
             .await;
         match res {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.cluster
+                    .write()
+                    .await
+                    .pool
+                    .put_client(shard, client)
+                    .await;
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }

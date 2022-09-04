@@ -277,7 +277,6 @@ async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error
 }
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    return Ok(Response::new(Body::from("ok")));
     let cluster_info_json = std::fs::File::open("/etc/hcache-cluster.json");
     if let Ok(mut cluster_info_json) = cluster_info_json {
         let mut data = String::new();
