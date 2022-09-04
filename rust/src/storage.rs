@@ -47,21 +47,17 @@ impl PeerClientQueue {
     pub async fn get_client(&self) -> Arc<CachePeerClient> {
         let mut clients = self.clients.lock().await;
         if clients.is_empty() {
-            loop {
-                if let Ok(transport) =
-                    tarpc::serde_transport::tcp::connect(self.addr, Bincode::default).await
-                {
-                    let client = CachePeerClient::new(client::Config::default(), transport).spawn();
-                    clients.push(Arc::new(client));
-                    break;
-                }
-            }
+            let transport = tarpc::serde_transport::tcp::connect(self.addr, Bincode::default)
+                .await
+                .unwrap();
+
+            let client = CachePeerClient::new(client::Config::default(), transport).spawn();
+            clients.push(Arc::new(client));
         }
         clients[0].clone()
     }
 
-    pub async fn put_client(&self, _: Arc<CachePeerClient>) {
-    }
+    pub async fn put_client(&self, _: Arc<CachePeerClient>) {}
 }
 
 pub struct PeerClientPool {
