@@ -33,20 +33,20 @@ where
 
 pub struct PeerClientQueue {
     pub addr: SocketAddr,
-    pub clients: tokio::sync::Mutex<Vec<Arc<CachePeerClient>>>,
+    pub clients: tokio::sync::RwLock<Vec<Arc<CachePeerClient>>>,
 }
 
 impl PeerClientQueue {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
-            clients: tokio::sync::Mutex::new(vec![]),
+            clients: tokio::sync::RwLock::new(vec![]),
         }
     }
 
     pub async fn get_client(&self) -> Arc<CachePeerClient> {
-        let mut clients = self.clients.lock().await;
-        if clients.is_empty() {
+        if self.clients.read().await.is_empty() {
+            let mut clients = self.clients.write().await;
             let transport = tarpc::serde_transport::tcp::connect(self.addr, Bincode::default)
                 .await
                 .unwrap();
@@ -54,7 +54,7 @@ impl PeerClientQueue {
             let client = CachePeerClient::new(client::Config::default(), transport).spawn();
             clients.push(Arc::new(client));
         }
-        clients[0].clone()
+        self.clients.read().await[0].clone()
     }
 
     pub async fn put_client(&self, _: Arc<CachePeerClient>) {}
