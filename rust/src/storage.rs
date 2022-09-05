@@ -28,7 +28,11 @@ pub fn get_shard<T>(key: T, count: u64) -> usize
 where
     T: Hash,
 {
-    (hash_key(key) % count) as usize
+    if count == 0 {
+        0
+    } else {
+        (hash_key(key) % count) as usize
+    }
 }
 
 pub struct PeerClientQueue {
