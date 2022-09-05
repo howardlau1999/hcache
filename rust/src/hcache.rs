@@ -235,7 +235,7 @@ async fn handle_batch(
     }
     storage.batch_insert_kv(my_keys).unwrap();
     for f in futures {
-        f.await.unwrap().unwrap();
+        f.await;
     }
     Ok(Response::new(Body::empty()))
 }
