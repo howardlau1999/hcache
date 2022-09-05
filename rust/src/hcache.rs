@@ -268,7 +268,7 @@ async fn handle_list(
 
 async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    if let Ok(mut cluster_json) = tokio::fs::File::create("/etc/hcache-cluster.json").await {
+    if let Ok(mut cluster_json) = tokio::fs::File::create("/root/hcache-cluster.json").await {
         cluster_json.write_all(&data).await.unwrap();
         Ok(Response::new(Body::from("ok")))
     } else {
@@ -277,7 +277,7 @@ async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error
 }
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let cluster_info_json = std::fs::File::open("/etc/hcache-cluster.json");
+    let cluster_info_json = std::fs::File::open("/root/hcache-cluster.json");
     if let Ok(mut cluster_info_json) = cluster_info_json {
         let mut data = String::new();
         if let Ok(_) = cluster_info_json.read_to_string(&mut data) {
@@ -293,7 +293,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
         }
     }
-    let loaded_marker_path = Path::new("/etc/hcache-loaded");
+    let loaded_marker_path = Path::new("/root/hcache-loaded");
     if loaded_marker_path.exists() {
         return Ok(Response::new(Body::from("ok")));
     }
@@ -328,7 +328,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     if let Ok(_) = tokio::fs::File::create(loaded_marker_path).await {
         Ok(Response::new(Body::from("ok")))
     } else {
-        Ok(Response::new(Body::from("fail")))
+        Ok(Response::new(Body::from("ok")))
     }
 }
 
