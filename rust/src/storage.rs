@@ -226,7 +226,7 @@ impl Storage {
         self.get_kv_in_memory(key)
     }
 
-    pub async fn get_kv_remote(&self, key: &str, shard: usize) -> Option<String> {
+    pub async fn get_kv_remote(&self, key: &str, shard: usize) -> Result<Option<String>, ()> {
         let client = {
             let pool = &self.cluster.read().await.pool;
             pool.get_client(shard).await
@@ -240,9 +240,9 @@ impl Storage {
                     .pool
                     .put_client(shard, client)
                     .await;
-                value
+                Ok(value)
             }
-            Err(_) => None,
+            Err(_) => Err(()),
         }
     }
 
@@ -444,7 +444,7 @@ impl Storage {
         key: &str,
         score_range: ScoreRange,
         shard: usize,
-    ) -> Option<Vec<ScoreValue>> {
+    ) -> Result<Option<Vec<ScoreValue>>, ()> {
         let client = {
             let pool = &self.cluster.read().await.pool;
             pool.get_client(shard).await
@@ -460,9 +460,9 @@ impl Storage {
                     .pool
                     .put_client(shard, client)
                     .await;
-                values
+                Ok(values)
             }
-            Err(_) => None,
+            Err(_) => Err(()),
         }
     }
 

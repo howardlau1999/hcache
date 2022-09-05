@@ -42,7 +42,16 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
     let value = if shard == me {
         storage.get_kv(key)
     } else {
-        storage.get_kv_remote(key, shard as usize).await
+        let res = storage.get_kv_remote(key, shard as usize).await;
+        match res {
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .unwrap())
+            }
+        }
     };
     let value = value.map_or_else(
         || {
@@ -147,7 +156,16 @@ async fn handle_zrange(
     let value = if shard == me {
         storage.zrange(key, dto)
     } else {
-        storage.zrange_remote(key, dto, shard as usize).await
+        let value = storage.zrange_remote(key, dto, shard as usize).await;
+        match value {
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .unwrap())
+            }
+        }
     };
     value.map_or_else(
         || {
