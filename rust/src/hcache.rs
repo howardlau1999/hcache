@@ -37,7 +37,7 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
         key,
         storage.count.load(std::sync::atomic::Ordering::Relaxed),
     ) as u32;
-    
+
     let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
     let value = if shard == me {
         storage.get_kv(key)
@@ -270,8 +270,9 @@ async fn handle_list(
     }
     let mut result = storage.list_keys(my_keys);
     for handle in futures {
-        let mut keys = handle.await.unwrap();
-        result.append(&mut keys);
+        if let Ok(Ok(mut keys)) = handle.await {
+            result.append(&mut keys);
+        }
     }
     if result.is_empty() {
         Ok(Response::builder()
