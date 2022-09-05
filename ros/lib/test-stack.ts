@@ -205,7 +205,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_essd",
+      defaultValue: "cloud_efficiency",
     });
 
     // 创建安全组开放端口
