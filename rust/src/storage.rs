@@ -509,9 +509,9 @@ impl Storage {
         let mut cluster = self.cluster.write().await;
         self.peer_updated
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.me.store(me - 1, std::sync::atomic::Ordering::Relaxed);
+        self.me.store(me - 1, std::sync::atomic::Ordering::SeqCst);
         self.count
-            .store(peers.len() as u64, std::sync::atomic::Ordering::Relaxed);
+            .store(peers.len() as u64, std::sync::atomic::Ordering::SeqCst);
         cluster.pool = Arc::new(PeerClientPool::new(peers, me).await);
     }
 }

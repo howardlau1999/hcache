@@ -35,10 +35,10 @@ use tokio::io::AsyncWriteExt;
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let shard = get_shard(
         key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
 
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let value = if shard == me {
         storage.get_kv(key)
     } else {
@@ -68,9 +68,9 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     let shard = get_shard(
         key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.remove_key(key).unwrap();
         storage.zsets.remove(key);
@@ -95,9 +95,9 @@ async fn handle_add(
     let kv: dto::InsrtRequest = serde_json::from_slice(&data).unwrap();
     let shard = get_shard(
         &kv.key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.insert_kv(&kv.key, &kv.value).unwrap();
         Ok(Response::new(Body::empty()))
@@ -124,9 +124,9 @@ async fn handle_zadd(
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
     let shard = get_shard(
         key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.zadd(key, dto);
         Ok(Response::new(Body::empty()))
@@ -150,9 +150,9 @@ async fn handle_zrange(
     let dto = serde_json::from_slice::<ScoreRange>(&data).unwrap();
     let shard = get_shard(
         key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let value = if shard == me {
         storage.zrange(key, dto)
     } else {
@@ -189,9 +189,9 @@ async fn handle_zrmv(
 ) -> Result<Response<Body>, hyper::Error> {
     let shard = get_shard(
         key,
-        storage.count.load(std::sync::atomic::Ordering::Relaxed),
+        storage.count.load(std::sync::atomic::Ordering::SeqCst),
     ) as u32;
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.zrmv(key, value);
         Ok(Response::new(Body::empty()))
@@ -214,18 +214,18 @@ async fn handle_batch(
     let data = hyper::body::to_bytes(body).await?;
 
     let kvs = serde_json::from_slice::<Vec<dto::InsrtRequest>>(&data).unwrap();
-    let peers_count = storage.count.load(std::sync::atomic::Ordering::Relaxed);
+    let peers_count = storage.count.load(std::sync::atomic::Ordering::SeqCst);
     let sharded = HashMap::<u32, Vec<dto::InsrtRequest>>::new();
     let mut sharded = kvs.into_iter().fold(sharded, |mut acc, kv| {
         let shard = get_shard(&kv.key, peers_count) as u32;
         acc.entry(shard).or_insert_with(Vec::new).push(kv);
         acc
     });
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let mut futures = Vec::new();
     let my_keys = sharded.remove(&me).unwrap_or_default();
     for (shard, kvs) in sharded {
-        let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+        let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
         let storage = storage.clone();
         if shard != me {
             futures.push(tokio::task::spawn_local(async move {
@@ -247,18 +247,18 @@ async fn handle_list(
     let body = req.into_body();
     let data = hyper::body::to_bytes(body).await?;
     let keys = serde_json::from_slice::<Vec<String>>(&data).unwrap();
-    let peers_count = storage.count.load(std::sync::atomic::Ordering::Relaxed);
+    let peers_count = storage.count.load(std::sync::atomic::Ordering::SeqCst);
     let sharded = HashMap::<u32, HashSet<String>>::new();
     let mut sharded = keys.into_iter().fold(sharded, |mut acc, key| {
         let shard = get_shard(&key, peers_count) as u32;
         acc.entry(shard).or_insert_with(HashSet::new).insert(key);
         acc
     });
-    let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+    let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let mut futures = Vec::new();
     let my_keys = sharded.remove(&me).unwrap_or_default();
     for (shard, keys) in sharded {
-        let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
+        let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
         let storage = storage.clone();
         if shard != me {
             futures.push(tokio::task::spawn_local(async move {
@@ -304,7 +304,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             if let Ok(cluster_info) = serde_json::from_str::<dto::UpdateCluster>(data.as_str()) {
                 if !storage
                     .peer_updated
-                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .load(std::sync::atomic::Ordering::SeqCst)
                 {
                     storage
                         .update_peers(cluster_info.hosts, cluster_info.index)
@@ -335,8 +335,8 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                     init_load_kv(
                         db,
                         &storage.kv,
-                        storage.count.load(std::sync::atomic::Ordering::Relaxed),
-                        storage.me.load(std::sync::atomic::Ordering::Relaxed) as usize,
+                        storage.count.load(std::sync::atomic::Ordering::SeqCst),
+                        storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
                     );
                 }
             }));
