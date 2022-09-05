@@ -37,3 +37,7 @@ tokio_uring = ["dep:tokio-uring"]
 [[bin]]
 name = "hcache"
 path = "src/hcache.rs"
+
+[[bin]]
+name = "gendata"
+path = "src/gendata.rs"

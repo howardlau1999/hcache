@@ -37,6 +37,7 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
         key,
         storage.count.load(std::sync::atomic::Ordering::Relaxed),
     ) as u32;
+    
     let me = storage.me.load(std::sync::atomic::Ordering::Relaxed);
     let value = if shard == me {
         storage.get_kv(key)
@@ -556,7 +557,7 @@ fn init_load_kv(
             unsafe {
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
-                if get_shard(&key, peers) == me {
+                if get_shard(key.as_str(), peers) == me {
                     kv.insert(key, value);
                     count += 1;
                 }
