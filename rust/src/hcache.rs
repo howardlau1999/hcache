@@ -1,7 +1,7 @@
 mod cluster;
 mod dto;
 mod storage;
-use storage::{get_shard, ClusterInfo, Storage, LOAD_STATE_LOADED, LOAD_STATE_INIT};
+use storage::{get_shard, ClusterInfo, Storage, LOAD_STATE_LOADED, LOAD_STATE_INIT, LOAD_STATE_LOADING};
 
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::LockFreeCuckooHash;
@@ -303,7 +303,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         let storage = storage.clone();
         if let Ok(_) = storage.load_state.compare_exchange(
             LOAD_STATE_INIT,
-            LOAD_STATE_LOADED,
+            LOAD_STATE_LOADING,
             Ordering::SeqCst,
             Ordering::SeqCst,
         ) {
