@@ -353,6 +353,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                 storage
                     .load_state
                     .store(LOAD_STATE_LOADED, Ordering::SeqCst);
+                std::fs::File::create(marker_path);
             });
         }
     }
