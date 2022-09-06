@@ -2,6 +2,7 @@ use crate::cluster::CachePeerClient;
 use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
+use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, WriteBatch};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize};
 use std::sync::Arc;
@@ -128,6 +129,7 @@ pub struct Storage {
     pub count: AtomicU64,
     pub peer_updated: AtomicBool,
     pub load_state: AtomicU32,
+    pub db: DBWithThreadMode<MultiThreaded>,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -201,6 +203,16 @@ impl Storage {
 
 #[cfg(feature = "memory")]
 impl Storage {
+    pub fn load_from_disk(&self) {
+        let db = &self.db;
+        let mut iter = db.iterator(IteratorMode::Start);
+        while let Some((key, value)) = iter.next() {
+            let key = unsafe { String::from_utf8_unchecked(key.to_vec()) };
+            let value = unsafe { String::from_utf8_unchecked(value.to_vec()) };
+            self.kv.insert(key, value);
+        }
+    }
+
     fn get_kv_in_memory(&self, key: &str) -> Option<String> {
         let guard = pin();
         self.kv.get(key, &guard).cloned()
@@ -208,13 +220,17 @@ impl Storage {
 
     fn insert_kv_in_memory(&self, key: &str, value: &str) -> Result<(), ()> {
         self.kv.insert(key.to_string(), value.to_string());
+        self.db.put(key, value);
         Ok(())
     }
 
     fn batch_insert_kv_in_memory(&self, kvs: Vec<InsrtRequest>) -> Result<(), ()> {
-        for kv in kvs {
+        let mut write_batch = WriteBatch::default();
+        for kv in kvs.clone() {
+            write_batch.put(&kv.key, &kv.value);
             self.kv.insert(kv.key, kv.value);
         }
+        self.db.write(write_batch);
         Ok(())
     }
 
@@ -232,6 +248,7 @@ impl Storage {
 
     fn remove_key_in_memory(&self, key: &str) -> Result<(), ()> {
         self.kv.remove(key);
+        self.db.delete(key);
         Ok(())
     }
 

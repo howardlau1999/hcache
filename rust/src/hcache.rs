@@ -27,7 +27,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, Options, SingleThreaded};
+use rocksdb::{DBWithThreadMode, Options, SingleThreaded, MultiThreaded};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -301,6 +301,11 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
         }
     }
+    let marker_path = Path::new("/root/hcache-loaded");
+    if marker_path.exists() {
+        storage.load_from_disk();
+        return Ok(Response::new(Body::from("ok")));
+    }
     if let Ok(_) = storage.load_state.compare_exchange(
         LOAD_STATE_INIT,
         LOAD_STATE_LOADING,
@@ -328,6 +333,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                             init_load_kv(
                                 db,
                                 &storage.kv,
+                                &storage.db,
                                 storage.count.load(std::sync::atomic::Ordering::SeqCst),
                                 storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
                             );
@@ -556,9 +562,12 @@ fn monoio_run(storage: Arc<Storage>) {
 fn init_load_kv(
     db: DBWithThreadMode<SingleThreaded>,
     kv: &LockFreeCuckooHash<String, String>,
+    disk_db: &DBWithThreadMode<MultiThreaded>,
     peers: u64,
     me: usize,
 ) {
+    use rocksdb::WriteBatch;
+
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
     options.set_verify_checksums(false);
@@ -567,10 +576,12 @@ fn init_load_kv(
     let mut count = 0;
     let tik = std::time::Instant::now();
     println!("Loading kv...");
+    let mut write_batch = WriteBatch::default();
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
         if let (Some(key), Some(value)) = (key, value) {
+            write_batch.put(key, value);
             unsafe {
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
@@ -582,6 +593,7 @@ fn init_load_kv(
         }
         iter.next();
     }
+    db.write(write_batch);
     let duration = tik.elapsed();
     println!("Loaded {} kvs in {:?}", count, duration);
 }
@@ -594,6 +606,15 @@ fn main() {
     let db_path = Path::new(std::env::var("INIT_DIR").unwrap());
     #[cfg(not(feature = "memory"))]
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, db_path).unwrap();
+
+    let mut options = Options::default();
+    options.create_if_missing(true);
+    options.set_allow_mmap_reads(true);
+    options.set_allow_mmap_writes(true);
+    options.set_unordered_write(true);
+    options.set_use_adaptive_mutex(true);
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data").unwrap();
+    
 
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
@@ -609,6 +630,7 @@ fn main() {
         count: Default::default(),
         peer_updated: Default::default(),
         load_state: Default::default(),
+        db,
     });
 
     #[cfg(feature = "tokio_uring")]
