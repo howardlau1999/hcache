@@ -27,7 +27,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, Options, SingleThreaded, MultiThreaded};
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -303,7 +303,14 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
     }
     let marker_path = Path::new("/root/hcache-loaded");
     if marker_path.exists() {
-        storage.load_from_disk();
+        if let Ok(_) = storage.load_state.compare_exchange(
+            LOAD_STATE_INIT,
+            LOAD_STATE_LOADED,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            storage.load_from_disk();
+        }
         return Ok(Response::new(Body::from("ok")));
     }
     if let Ok(_) = storage.load_state.compare_exchange(
@@ -614,7 +621,6 @@ fn main() {
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
     let db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data").unwrap();
-    
 
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
