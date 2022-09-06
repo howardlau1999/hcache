@@ -3,7 +3,7 @@ use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::{collections::hash_map::DefaultHasher, net::SocketAddr};
 use tarpc::tokio_serde::formats::Bincode;
@@ -38,20 +38,24 @@ where
 pub struct PeerClientQueue {
     pub addr: SocketAddr,
     pub clients: tokio::sync::RwLock<Vec<Arc<CachePeerClient>>>,
+    pub capacity: usize,
+    pub next: AtomicUsize,
 }
 
 impl PeerClientQueue {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr, capacity: usize) -> Self {
         Self {
             addr,
+            capacity,
+            next: Default::default(),
             clients: tokio::sync::RwLock::new(vec![]),
         }
     }
 
     pub async fn get_client(&self) -> Result<Arc<CachePeerClient>, Box<dyn std::error::Error>> {
-        if self.clients.read().await.is_empty() {
+        if self.clients.read().await.len() < self.capacity {
             let mut clients = self.clients.write().await;
-            if clients.is_empty() {
+            while clients.len() < self.capacity {
                 let transport =
                     tarpc::serde_transport::tcp::connect(self.addr, Bincode::default).await?;
 
@@ -59,7 +63,8 @@ impl PeerClientQueue {
                 clients.push(Arc::new(client));
             }
         }
-        Ok(self.clients.read().await[0].clone())
+        let idx = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.capacity;
+        Ok(self.clients.read().await[idx].clone())
     }
 
     pub async fn put_client(&self, _: Arc<CachePeerClient>) {}
@@ -83,16 +88,13 @@ impl PeerClientPool {
         for idx in 0..peers.len() {
             let hostport = peers[idx].clone() + ":58080";
             let addr = hostport.parse::<SocketAddr>().unwrap();
-            let client = PeerClientQueue::new(addr);
+            let client = PeerClientQueue::new(addr, 16);
             clients.push(client);
         }
         Self { clients }
     }
 
-    pub async fn get_client(
-        &self,
-        idx: usize,
-    ) -> Result<Arc<CachePeerClient>, ()> {
+    pub async fn get_client(&self, idx: usize) -> Result<Arc<CachePeerClient>, ()> {
         self.clients[idx].get_client().await.map_err(|_| ())
     }
 
@@ -111,6 +113,10 @@ pub struct ClusterInfo {
     pub peers: Vec<String>,
 }
 
+pub const LOAD_STATE_INIT: u32 = 0;
+pub const LOAD_STATE_LOADING: u32 = 1;
+pub const LOAD_STATE_LOADED: u32 = 2;
+
 pub struct Storage {
     #[cfg(not(feature = "memory"))]
     pub db: DBWithThreadMode<MultiThreaded>,
@@ -121,6 +127,7 @@ pub struct Storage {
     pub me: AtomicU32,
     pub count: AtomicU64,
     pub peer_updated: AtomicBool,
+    pub load_state: AtomicU32,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -311,7 +318,11 @@ impl Storage {
         self.list_keys_in_memory(keys)
     }
 
-    pub async fn list_keys_remote(&self, keys: Vec<String>, shard: usize) -> Result<Vec<InsrtRequest>, ()> {
+    pub async fn list_keys_remote(
+        &self,
+        keys: Vec<String>,
+        shard: usize,
+    ) -> Result<Vec<InsrtRequest>, ()> {
         let client = {
             let pool = &self.cluster.read().await.pool;
             pool.get_client(shard).await?

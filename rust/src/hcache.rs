@@ -1,7 +1,7 @@
 mod cluster;
 mod dto;
 mod storage;
-use storage::{get_shard, ClusterInfo, Storage};
+use storage::{get_shard, ClusterInfo, Storage, LOAD_STATE_LOADED, LOAD_STATE_INIT};
 
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::LockFreeCuckooHash;
@@ -29,14 +29,12 @@ use rocksdb::{DBWithThreadMode, Options, SingleThreaded};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let shard = get_shard(
-        key,
-        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-    ) as u32;
+    let shard = get_shard(key, storage.count.load(std::sync::atomic::Ordering::SeqCst)) as u32;
 
     let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let value = if shard == me {
@@ -66,10 +64,7 @@ async fn handle_query(key: &str, storage: Arc<Storage>) -> Result<Response<Body>
 }
 
 async fn handle_del(key: &str, storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let shard = get_shard(
-        key,
-        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-    ) as u32;
+    let shard = get_shard(key, storage.count.load(std::sync::atomic::Ordering::SeqCst)) as u32;
     let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.remove_key(key).unwrap();
@@ -122,10 +117,7 @@ async fn handle_zadd(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto: ScoreValue = serde_json::from_slice(&data).unwrap();
-    let shard = get_shard(
-        key,
-        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-    ) as u32;
+    let shard = get_shard(key, storage.count.load(std::sync::atomic::Ordering::SeqCst)) as u32;
     let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.zadd(key, dto);
@@ -148,10 +140,7 @@ async fn handle_zrange(
 ) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
     let dto = serde_json::from_slice::<ScoreRange>(&data).unwrap();
-    let shard = get_shard(
-        key,
-        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-    ) as u32;
+    let shard = get_shard(key, storage.count.load(std::sync::atomic::Ordering::SeqCst)) as u32;
     let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     let value = if shard == me {
         storage.zrange(key, dto)
@@ -187,10 +176,7 @@ async fn handle_zrmv(
     value: &str,
     storage: Arc<Storage>,
 ) -> Result<Response<Body>, hyper::Error> {
-    let shard = get_shard(
-        key,
-        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-    ) as u32;
+    let shard = get_shard(key, storage.count.load(std::sync::atomic::Ordering::SeqCst)) as u32;
     let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
     if shard == me {
         storage.zrmv(key, value);
@@ -313,42 +299,52 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
         }
     }
-    let loaded_marker_path = Path::new("/root/hcache-loaded");
-    if loaded_marker_path.exists() {
-        return Ok(Response::new(Body::from("ok")));
-    }
     if let Ok(init_paths) = std::env::var("INIT_DIRS") {
-        let mut threads = Vec::new();
-        for init_path in init_paths.split(",") {
-            let init_path = String::from(init_path);
-            let storage = storage.clone();
-            threads.push(std::thread::spawn(move || {
-                let db_path = Path::new(init_path.as_str());
-                let mut options = Options::default();
-                options.create_if_missing(true);
-                options.set_allow_mmap_reads(true);
-                options.set_allow_mmap_writes(true);
-                options.set_unordered_write(true);
-                options.set_use_adaptive_mutex(true);
-                #[cfg(feature = "memory")]
-                if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path) {
-                    init_load_kv(
-                        db,
-                        &storage.kv,
-                        storage.count.load(std::sync::atomic::Ordering::SeqCst),
-                        storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
-                    );
+        let storage = storage.clone();
+        if let Ok(_) = storage.load_state.compare_exchange(
+            LOAD_STATE_INIT,
+            LOAD_STATE_LOADED,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            std::thread::spawn(move || {
+                let mut threads = Vec::new();
+                for init_path in init_paths.split(",") {
+                    let init_path = String::from(init_path);
+                    let storage = storage.clone();
+                    threads.push(std::thread::spawn(move || {
+                        let db_path = Path::new(init_path.as_str());
+                        let mut options = Options::default();
+                        options.create_if_missing(true);
+                        options.set_allow_mmap_reads(true);
+                        options.set_allow_mmap_writes(true);
+                        options.set_unordered_write(true);
+                        options.set_use_adaptive_mutex(true);
+                        #[cfg(feature = "memory")]
+                        if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path)
+                        {
+                            init_load_kv(
+                                db,
+                                &storage.kv,
+                                storage.count.load(std::sync::atomic::Ordering::SeqCst),
+                                storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
+                            );
+                        }
+                    }));
                 }
-            }));
-        }
-        for t in threads {
-            if let Ok(_) = t.join() {}
+                for t in threads {
+                    if let Ok(_) = t.join() {}
+                }
+                storage
+                    .load_state
+                    .store(LOAD_STATE_LOADED, Ordering::SeqCst);
+            });
         }
     }
-    if let Ok(_) = tokio::fs::File::create(loaded_marker_path).await {
+    if storage.load_state.load(Ordering::SeqCst) == LOAD_STATE_LOADED {
         Ok(Response::new(Body::from("ok")))
     } else {
-        Ok(Response::new(Body::from("ok")))
+        Ok(Response::new(Body::from("loading")))
     }
 }
 
@@ -610,6 +606,7 @@ fn main() {
         me: Default::default(),
         count: Default::default(),
         peer_updated: Default::default(),
+        load_state: Default::default(),
     });
 
     #[cfg(feature = "tokio_uring")]
