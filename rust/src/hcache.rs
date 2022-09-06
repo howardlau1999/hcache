@@ -601,7 +601,7 @@ fn init_load_kv(
         }
         iter.next();
     }
-    db.write(write_batch);
+    disk_db.write(write_batch);
     let duration = tik.elapsed();
     println!("Loaded {} kvs in {:?}", count, duration);
 }

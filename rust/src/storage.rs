@@ -206,11 +206,14 @@ impl Storage {
     pub fn load_from_disk(&self) {
         let db = &self.db;
         let mut iter = db.iterator(IteratorMode::Start);
+        let mut count = 0;
         while let Some((key, value)) = iter.next() {
+            count += 1;
             let key = unsafe { String::from_utf8_unchecked(key.to_vec()) };
             let value = unsafe { String::from_utf8_unchecked(value.to_vec()) };
             self.kv.insert(key, value);
         }
+        println!("Loaded {} keys from disk", count);
     }
 
     fn get_kv_in_memory(&self, key: &str) -> Option<String> {
