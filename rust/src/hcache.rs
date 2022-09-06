@@ -301,18 +301,6 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
         }
     }
-    let marker_path = Path::new("/root/hcache-loaded");
-    if marker_path.exists() {
-        if let Ok(_) = storage.load_state.compare_exchange(
-            LOAD_STATE_INIT,
-            LOAD_STATE_LOADED,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            storage.load_from_disk();
-        }
-        return Ok(Response::new(Body::from("ok")));
-    }
     if let Ok(_) = storage.load_state.compare_exchange(
         LOAD_STATE_INIT,
         LOAD_STATE_LOADING,
@@ -346,13 +334,17 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         }
                     }));
                 }
+                
+                let cloned_storage = storage.clone();
+                threads.push(std::thread::spawn(move || {
+                    cloned_storage.load_from_disk();
+                }));
                 for t in threads {
                     if let Ok(_) = t.join() {}
                 }
                 storage
                     .load_state
                     .store(LOAD_STATE_LOADED, Ordering::SeqCst);
-                std::fs::File::create(marker_path);
             });
         }
     }
@@ -582,8 +574,6 @@ fn init_load_kv(
     let mut count = 0;
     let tik = std::time::Instant::now();
     println!("Loading kv...");
-    let mut no_wal = WriteOptions::default();
-    no_wal.disable_wal(true);
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -592,7 +582,6 @@ fn init_load_kv(
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
-                    storage.db.put_opt(&key, &value, &no_wal);
                     storage.kv.insert(key, value);
                     count += 1;
                 }
