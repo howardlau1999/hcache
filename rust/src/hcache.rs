@@ -589,11 +589,11 @@ fn init_load_kv(
         let key = iter.key();
         let value = iter.value();
         if let (Some(key), Some(value)) = (key, value) {
-            write_batch.put(key, value);
             unsafe {
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
+                    write_batch.put(&key, &value);
                     kv.insert(key, value);
                     count += 1;
                 }
