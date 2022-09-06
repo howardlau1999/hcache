@@ -166,7 +166,7 @@ export class TestStack extends ros.Stack {
     const specStartScript = spec.startScript;
 
     // 随机选择一个可用区部署
-    const zoneId = process.env.ZONE_ID ?? ros.Fn.select(0, ros.Fn.getAzs(ros.RosPseudo.region));
+    const zoneId = 'cn-beijing-a';
 
     // 创建虚拟网络
     // 构建 VPC

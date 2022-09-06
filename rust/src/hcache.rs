@@ -339,8 +339,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         {
                             init_load_kv(
                                 db,
-                                &storage.kv,
-                                &storage.db,
+                                storage.clone(),
                                 storage.count.load(std::sync::atomic::Ordering::SeqCst),
                                 storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
                             );
@@ -569,12 +568,11 @@ fn monoio_run(storage: Arc<Storage>) {
 #[cfg(feature = "memory")]
 fn init_load_kv(
     db: DBWithThreadMode<SingleThreaded>,
-    kv: &LockFreeCuckooHash<String, String>,
-    disk_db: &DBWithThreadMode<MultiThreaded>,
+    storage: Arc<Storage>,
     peers: u64,
     me: usize,
 ) {
-    use rocksdb::WriteBatch;
+    use rocksdb::WriteOptions;
 
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
@@ -584,7 +582,8 @@ fn init_load_kv(
     let mut count = 0;
     let tik = std::time::Instant::now();
     println!("Loading kv...");
-    let mut write_batch = WriteBatch::default();
+    let mut no_wal = WriteOptions::default();
+    no_wal.disable_wal(true);
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -593,15 +592,14 @@ fn init_load_kv(
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
-                    write_batch.put(&key, &value);
-                    kv.insert(key, value);
+                    storage.db.put_opt(&key, &value, &no_wal);
+                    storage.kv.insert(key, value);
                     count += 1;
                 }
             }
         }
         iter.next();
     }
-    disk_db.write(write_batch);
     let duration = tik.elapsed();
     println!("Loaded {} kvs in {:?}", count, duration);
 }
