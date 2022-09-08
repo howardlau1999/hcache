@@ -316,11 +316,13 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         if let Ok(init_paths) = std::env::var("INIT_DIRS") {
             let storage = storage.clone();
             std::thread::spawn(move || {
+                println!("Start loading");
                 let mut threads = Vec::new();
                 for init_path in init_paths.split(",") {
                     let init_path = String::from(init_path);
                     let storage = storage.clone();
                     threads.push(std::thread::spawn(move || {
+                        println!("Start loading from {}", init_path);
                         let db_path = Path::new(init_path.as_str());
                         let mut options = Options::default();
                         options.create_if_missing(true);
@@ -338,6 +340,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                 storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
                             );
                         }
+                        println!("Finish loading from {}", init_path);
                     }));
                 }
                 
@@ -348,6 +351,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                 for t in threads {
                     if let Ok(_) = t.join() {}
                 }
+                println!("Finish loading");
                 storage
                     .load_state
                     .store(LOAD_STATE_LOADED, Ordering::SeqCst);
