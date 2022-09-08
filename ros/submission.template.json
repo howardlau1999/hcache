@@ -243,6 +243,7 @@
                                     "################# shell 示例 - 启动服务 ################# \n",
                                     "sudo mkdir /init_data \n",
                                     "sudo cp -r /nas/* /init_data \n",
+                                    "sudo mkdir /data \n",
                                     "cd ~ && bash start.sh \n",
                                     "ros-notify \n"
                                 ]
