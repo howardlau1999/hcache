@@ -276,7 +276,7 @@ async fn handle_list(
 
 async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error> {
     let data = hyper::body::to_bytes(body).await?;
-    if let Ok(mut cluster_json) = tokio::fs::File::create("/root/hcache-cluster.json").await {
+    if let Ok(mut cluster_json) = tokio::fs::File::create("/data/cluster.json").await {
         cluster_json.write_all(&data).await.unwrap();
         Ok(Response::new(Body::from("ok")))
     } else {
@@ -284,16 +284,18 @@ async fn handle_updatecluster(body: Body) -> Result<Response<Body>, hyper::Error
     }
 }
 
-async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
-    let cluster_info_json = std::fs::File::open("/root/hcache-cluster.json");
+async fn try_load_peers(storage: Arc<Storage>) {
+    let cluster_info_json = std::fs::File::open("/data/cluster.json");
     if let Ok(mut cluster_info_json) = cluster_info_json {
         let mut data = String::new();
         if let Ok(_) = cluster_info_json.read_to_string(&mut data) {
             if let Ok(cluster_info) = serde_json::from_str::<dto::UpdateCluster>(data.as_str()) {
-                if !storage
-                    .peer_updated
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
+                if let Ok(_) = storage.peer_updated.compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                ) {
                     storage
                         .update_peers(cluster_info.hosts, cluster_info.index)
                         .await;
@@ -301,6 +303,10 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
             }
         }
     }
+}
+
+async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
+    try_load_peers(storage.clone()).await;
     if let Ok(_) = storage.load_state.compare_exchange(
         LOAD_STATE_INIT,
         LOAD_STATE_LOADING,
@@ -449,6 +455,7 @@ fn tokio_local_run(storage: Arc<Storage>) {
             .unwrap();
         local_rt.block_on(async move {
             let local = tokio::task::LocalSet::new();
+            local.run_until(try_load_peers(storage.clone())).await;
             local.run_until(cluster::cluster_server(storage)).await;
         })
     });
@@ -574,6 +581,8 @@ fn init_load_kv(
     let mut count = 0;
     let tik = std::time::Instant::now();
     println!("Loading kv...");
+    let mut write_options = WriteOptions::default();
+    write_options.disable_wal(true);
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -582,7 +591,8 @@ fn init_load_kv(
                 let key = String::from_utf8_unchecked(key.to_vec());
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
-                    storage.kv.insert(key, value);
+                    storage.kv.insert(key.clone(), value.clone());
+                    storage.db.put_opt(key, value, &write_options);
                     count += 1;
                 }
             }
@@ -604,11 +614,13 @@ fn main() {
 
     let mut options = Options::default();
     options.create_if_missing(true);
+    options.increase_parallelism(4);
     options.set_allow_mmap_reads(true);
     options.set_allow_mmap_writes(true);
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
-    let db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data").unwrap();
+    let db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data/kv").unwrap();
+    let zset_db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap();
 
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
@@ -625,7 +637,9 @@ fn main() {
         peer_updated: Default::default(),
         load_state: Default::default(),
         db,
+        zset_db,
     });
+    storage.load_from_disk();
 
     #[cfg(feature = "tokio_uring")]
     tokio_uring_run(storage);

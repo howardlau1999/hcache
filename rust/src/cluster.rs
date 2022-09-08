@@ -88,7 +88,7 @@ impl CachePeer for CachePeerServer {
         key: String,
         score_value: ScoreValue,
     ) -> Self::ZaddFut {
-        future::ready(self.storage.zadd(key.as_str(), score_value))
+        future::ready(self.storage.zadd_memory(key.as_str(), score_value))
     }
 
     fn zrange(

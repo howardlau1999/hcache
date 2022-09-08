@@ -6,7 +6,7 @@ import { hostname } from 'os';
 
 export const dnfInstallPackages = `#!/bin/bash
   dnf update -y
-  dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build    ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
+  dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build  libzstd-devel ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
     valgrind-devel git ccache curl make gcc cmake clang-devel htop nfs-utils tmux openssl-devel perf hwloc-devel\
     numactl-devel  libpciaccess-devel    cryptopp-devel    libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel\
     liburing-devel  meson    python3    python3-pyelftools   systemtap-sdt-devel   libtool    yaml-cpp-devel    c-ares-devel    stow\

@@ -130,6 +130,7 @@ pub struct Storage {
     pub peer_updated: AtomicBool,
     pub load_state: AtomicU32,
     pub db: DBWithThreadMode<MultiThreaded>,
+    pub zset_db: DBWithThreadMode<MultiThreaded>,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -203,17 +204,69 @@ impl Storage {
 
 #[cfg(feature = "memory")]
 impl Storage {
+    pub fn get_zset_key(zkey: &str, value: &str) -> Vec<u8> {
+        let mut key = Vec::new();
+        key.extend_from_slice(zkey.as_bytes());
+        key.push(0);
+        key.extend_from_slice(value.as_bytes());
+        key
+    }
+
+    pub fn decode_zset_key(key: &[u8]) -> (String, String) {
+        let mut parts = key.splitn(2, |c| *c == 0);
+        let zkey = unsafe { String::from_utf8_unchecked(parts.next().unwrap().to_vec()) };
+        let value = unsafe { String::from_utf8_unchecked(parts.next().unwrap().to_vec()) };
+        (zkey, value)
+    }
+
     pub fn load_from_disk(&self) {
         let db = &self.db;
-        let mut iter = db.iterator(IteratorMode::Start);
-        let mut count = 0;
-        while let Some((key, value)) = iter.next() {
-            count += 1;
-            let key = unsafe { String::from_utf8_unchecked(key.to_vec()) };
-            let value = unsafe { String::from_utf8_unchecked(value.to_vec()) };
-            self.kv.insert(key, value);
+        let mut options = rocksdb::ReadOptions::default();
+        options.set_readahead_size(128 * 1024 * 1024);
+        options.set_verify_checksums(false);
+        {
+            let mut iter = db.raw_iterator_opt(options);
+            iter.seek_to_first();
+            let mut count = 0;
+            while iter.valid() {
+                if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
+                    count += 1;
+                    let key = unsafe { String::from_utf8_unchecked(key.to_vec()) };
+                    let value = unsafe { String::from_utf8_unchecked(value.to_vec()) };
+                    self.kv.insert(key, value);
+                }
+                iter.next();
+            }
+            println!("Loaded {} keys from disk", count);
         }
-        println!("Loaded {} keys from disk", count);
+
+        let mut options = rocksdb::ReadOptions::default();
+        options.set_readahead_size(128 * 1024 * 1024);
+        options.set_verify_checksums(false);
+        let zset_db = &self.zset_db;
+        let mut iter = zset_db.raw_iterator_opt(options);
+        iter.seek_to_first();
+        let mut count = 0;
+        while iter.valid() {
+            if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
+                count += 1;
+                let (zkey, zvalue) = Storage::decode_zset_key(key);
+                let score = {
+                    let mut buf = [0u8; 4];
+                    buf.copy_from_slice(value);
+                    u32::from_le_bytes(buf)
+                };
+                self.zadd_memory(
+                    zkey.as_str(),
+                    ScoreValue {
+                        score,
+                        value: zvalue,
+                    },
+                );
+            }
+            iter.next();
+        }
+        println!("Loaded {} zset keys from disk", count);
     }
 
     fn get_kv_in_memory(&self, key: &str) -> Option<String> {
@@ -223,7 +276,6 @@ impl Storage {
 
     fn insert_kv_in_memory(&self, key: &str, value: &str) -> Result<(), ()> {
         self.kv.insert(key.to_string(), value.to_string());
-        self.db.put(key, value);
         Ok(())
     }
 
@@ -251,7 +303,6 @@ impl Storage {
 
     fn remove_key_in_memory(&self, key: &str) -> Result<(), ()> {
         self.kv.remove(key);
-        self.db.delete(key);
         Ok(())
     }
 
@@ -281,6 +332,7 @@ impl Storage {
 
     pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
         self.zsets.remove(key);
+        self.db.put(key, value);
         self.insert_kv_in_memory(key, value)
     }
 
@@ -363,6 +415,7 @@ impl Storage {
     }
 
     pub fn remove_key(&self, key: &str) -> Result<(), ()> {
+        self.db.delete(key);
         self.remove_key_in_memory(key)
     }
 
@@ -387,6 +440,12 @@ impl Storage {
     }
 
     pub fn zadd(&self, key: &str, score_value: ScoreValue) {
+        let full_key = Storage::get_zset_key(key, score_value.value.as_str());
+        self.zset_db.put(full_key, score_value.score.to_le_bytes());
+        self.zadd_memory(key, score_value);
+    }
+
+    pub fn zadd_memory(&self, key: &str, score_value: ScoreValue) {
         let guard = pin();
         let zset = self.zsets.get_or_insert(
             key.to_string(),
@@ -508,6 +567,7 @@ impl Storage {
         if let Some(zset) = self.zsets.get(key, &guard) {
             let score = zset.value_to_score.remove_with_guard(value, &guard);
             if let Some(score) = score {
+                self.zset_db.delete(Storage::get_zset_key(key, value));
                 zset.score_to_values
                     .write()
                     .entry(*score)
