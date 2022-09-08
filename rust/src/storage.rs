@@ -2,7 +2,7 @@ use crate::cluster::CachePeerClient;
 use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
-use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, WriteBatch};
+use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, WriteBatch, WriteOptions};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize};
 use std::sync::Arc;
@@ -129,8 +129,9 @@ pub struct Storage {
     pub count: AtomicU64,
     pub peer_updated: AtomicBool,
     pub load_state: AtomicU32,
-    pub db: DBWithThreadMode<MultiThreaded>,
-    pub zset_db: DBWithThreadMode<MultiThreaded>,
+    pub db: Arc<DBWithThreadMode<MultiThreaded>>,
+    pub zset_db: Arc<DBWithThreadMode<MultiThreaded>>,
+    pub write_options: WriteOptions,
 }
 
 #[cfg(not(feature = "memory"))]
@@ -285,7 +286,7 @@ impl Storage {
             write_batch.put(&kv.key, &kv.value);
             self.kv.insert(kv.key, kv.value);
         }
-        self.db.write(write_batch);
+        self.db.write_opt(write_batch, &self.write_options);
         Ok(())
     }
 
@@ -332,7 +333,7 @@ impl Storage {
 
     pub fn insert_kv(&self, key: &str, value: &str) -> Result<(), ()> {
         self.zsets.remove(key);
-        self.db.put(key, value);
+        self.db.put_opt(key, value, &self.write_options);
         self.insert_kv_in_memory(key, value)
     }
 
@@ -415,7 +416,7 @@ impl Storage {
     }
 
     pub fn remove_key(&self, key: &str) -> Result<(), ()> {
-        self.db.delete(key);
+        self.db.delete_opt(key, &self.write_options);
         self.remove_key_in_memory(key)
     }
 
@@ -441,7 +442,7 @@ impl Storage {
 
     pub fn zadd(&self, key: &str, score_value: ScoreValue) {
         let full_key = Storage::get_zset_key(key, score_value.value.as_str());
-        self.zset_db.put(full_key, score_value.score.to_le_bytes());
+        self.zset_db.put_opt(full_key, score_value.score.to_le_bytes(), &self.write_options);
         self.zadd_memory(key, score_value);
     }
 
@@ -567,7 +568,7 @@ impl Storage {
         if let Some(zset) = self.zsets.get(key, &guard) {
             let score = zset.value_to_score.remove_with_guard(value, &guard);
             if let Some(score) = score {
-                self.zset_db.delete(Storage::get_zset_key(key, value));
+                self.zset_db.delete_opt(Storage::get_zset_key(key, value), &self.write_options);
                 zset.score_to_values
                     .write()
                     .entry(*score)

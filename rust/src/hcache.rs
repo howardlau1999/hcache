@@ -27,7 +27,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded};
+use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded, WriteOptions, FlushOptions};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -623,9 +623,21 @@ fn main() {
     options.set_allow_mmap_writes(true);
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
-    let db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data/kv").unwrap();
-    let zset_db = DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap();
-
+    let db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/kv").unwrap());
+    let zset_db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap());
+    let mut write_options = WriteOptions::default();
+    write_options.disable_wal(true);
+    {
+        let db = db.clone();
+        let zset_db = zset_db.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                db.flush();
+                zset_db.flush();
+            }
+        });
+    }
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
         db,
@@ -642,6 +654,7 @@ fn main() {
         load_state: Default::default(),
         db,
         zset_db,
+        write_options,
     });
     storage.load_from_disk();
 
