@@ -225,6 +225,7 @@ impl Storage {
         let mut options = rocksdb::ReadOptions::default();
         options.set_readahead_size(128 * 1024 * 1024);
         options.set_verify_checksums(false);
+        options.fill_cache(false);
         {
             let mut iter = db.raw_iterator_opt(options);
             iter.seek_to_first();
@@ -244,6 +245,7 @@ impl Storage {
         let mut options = rocksdb::ReadOptions::default();
         options.set_readahead_size(128 * 1024 * 1024);
         options.set_verify_checksums(false);
+        options.fill_cache(false);
         let zset_db = &self.zset_db;
         let mut iter = zset_db.raw_iterator_opt(options);
         iter.seek_to_first();

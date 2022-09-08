@@ -574,6 +574,7 @@ fn init_load_kv(
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
     options.set_verify_checksums(false);
+    options.fill_cache(false);
     let mut iter = db.raw_iterator_opt(options);
     iter.seek_to_first();
     let mut count = 0;
