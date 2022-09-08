@@ -44,26 +44,34 @@ pub struct PeerClientQueue {
 }
 
 impl PeerClientQueue {
-    pub fn new(addr: SocketAddr, capacity: usize) -> Self {
-        Self {
+    pub async fn new(addr: SocketAddr, capacity: usize) -> Self {
+        let q = Self {
             addr,
             capacity,
             next: Default::default(),
             clients: tokio::sync::RwLock::new(vec![]),
+        };
+        {
+            let mut clients = q.clients.write().await;
+            while clients.len() < q.capacity {
+                loop {
+                    if let Ok(transport) =
+                        tarpc::serde_transport::tcp::connect(q.addr, Bincode::default).await
+                    {
+                        let client =
+                            CachePeerClient::new(client::Config::default(), transport).spawn();
+                        clients.push(Arc::new(client));
+                        break;
+                    } else {
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    }
+                }
+            }
         }
+        q
     }
 
     pub async fn get_client(&self) -> Result<Arc<CachePeerClient>, Box<dyn std::error::Error>> {
-        if self.clients.read().await.len() < self.capacity {
-            let mut clients = self.clients.write().await;
-            while clients.len() < self.capacity {
-                let transport =
-                    tarpc::serde_transport::tcp::connect(self.addr, Bincode::default).await?;
-
-                let client = CachePeerClient::new(client::Config::default(), transport).spawn();
-                clients.push(Arc::new(client));
-            }
-        }
         let idx = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.capacity;
         Ok(self.clients.read().await[idx].clone())
     }
@@ -89,7 +97,7 @@ impl PeerClientPool {
         for idx in 0..peers.len() {
             let hostport = peers[idx].clone() + ":58080";
             let addr = hostport.parse::<SocketAddr>().unwrap();
-            let client = PeerClientQueue::new(addr, 16);
+            let client = PeerClientQueue::new(addr, 16).await;
             clients.push(client);
         }
         Self { clients }
@@ -444,7 +452,11 @@ impl Storage {
 
     pub fn zadd(&self, key: &str, score_value: ScoreValue) {
         let full_key = Storage::get_zset_key(key, score_value.value.as_str());
-        self.zset_db.put_opt(full_key, score_value.score.to_le_bytes(), &self.write_options);
+        self.zset_db.put_opt(
+            full_key,
+            score_value.score.to_le_bytes(),
+            &self.write_options,
+        );
         self.zadd_memory(key, score_value);
     }
 
@@ -570,7 +582,8 @@ impl Storage {
         if let Some(zset) = self.zsets.get(key, &guard) {
             let score = zset.value_to_score.remove_with_guard(value, &guard);
             if let Some(score) = score {
-                self.zset_db.delete_opt(Storage::get_zset_key(key, value), &self.write_options);
+                self.zset_db
+                    .delete_opt(Storage::get_zset_key(key, value), &self.write_options);
                 zset.score_to_values
                     .write()
                     .entry(*score)

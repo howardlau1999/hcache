@@ -27,7 +27,9 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 #[cfg(not(feature = "memory"))]
 use rocksdb::WriteBatch;
 
-use rocksdb::{DBWithThreadMode, MultiThreaded, Options, SingleThreaded, WriteOptions, FlushOptions};
+use rocksdb::{
+    DBWithThreadMode, FlushOptions, MultiThreaded, Options, SingleThreaded, WriteOptions,
+};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -343,7 +345,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         println!("Finish loading from {}", init_path);
                     }));
                 }
-                
+
                 for t in threads {
                     if let Ok(_) = t.join() {}
                 }
@@ -454,8 +456,9 @@ fn tokio_local_run(storage: Arc<Storage>) {
             .build()
             .unwrap();
         rt.block_on(async move {
-            try_load_peers(storage.clone()).await;
-            cluster::cluster_server(storage).await;
+            let f = tokio::spawn(cluster::cluster_server(storage.clone()));
+            try_load_peers(storage).await;
+            f.await.unwrap();
         })
     });
     worker_threads.push(rpc_worker);
@@ -570,7 +573,6 @@ fn init_load_kv(
     peers: u64,
     me: usize,
 ) {
-
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
     options.set_verify_checksums(false);
@@ -619,18 +621,17 @@ fn main() {
     options.set_unordered_write(true);
     options.set_use_adaptive_mutex(true);
     let db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/kv").unwrap());
-    let zset_db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap());
+    let zset_db =
+        Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap());
     let mut write_options = WriteOptions::default();
     write_options.disable_wal(true);
     {
         let db = db.clone();
         let zset_db = zset_db.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                db.flush();
-                zset_db.flush();
-            }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            db.flush();
+            zset_db.flush();
         });
     }
     let storage = Arc::new(Storage {
