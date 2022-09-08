@@ -449,14 +449,13 @@ fn tokio_local_run(storage: Arc<Storage>) {
     }
     let rpc_worker = std::thread::spawn(move || {
         println!("Starting RPC worker");
-        let local_rt = tokio::runtime::Builder::new_current_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
-        local_rt.block_on(async move {
-            let local = tokio::task::LocalSet::new();
-            local.run_until(try_load_peers(storage.clone())).await;
-            local.run_until(cluster::cluster_server(storage)).await;
+        rt.block_on(async move {
+            try_load_peers(storage.clone()).await;
+            cluster::cluster_server(storage).await;
         })
     });
     worker_threads.push(rpc_worker);
@@ -627,7 +626,7 @@ fn main() {
         let zset_db = zset_db.clone();
         std::thread::spawn(move || {
             loop {
-                std::thread::sleep(std::time::Duration::from_secs(5));
+                std::thread::sleep(std::time::Duration::from_secs(1));
                 db.flush();
                 zset_db.flush();
             }
