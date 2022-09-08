@@ -344,10 +344,6 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                     }));
                 }
                 
-                let cloned_storage = storage.clone();
-                threads.push(std::thread::spawn(move || {
-                    cloned_storage.load_from_disk();
-                }));
                 for t in threads {
                     if let Ok(_) = t.join() {}
                 }
@@ -575,7 +571,6 @@ fn init_load_kv(
     peers: u64,
     me: usize,
 ) {
-    use rocksdb::WriteOptions;
 
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
@@ -625,19 +620,19 @@ fn main() {
     options.set_use_adaptive_mutex(true);
     let db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/kv").unwrap());
     let zset_db = Arc::new(DBWithThreadMode::<MultiThreaded>::open(&options, "/data/zset").unwrap());
-    let write_options = WriteOptions::default();
-    // write_options.disable_wal(true);
-    // {
-    //     let db = db.clone();
-    //     let zset_db = zset_db.clone();
-    //     std::thread::spawn(move || {
-    //         loop {
-    //             std::thread::sleep(std::time::Duration::from_secs(5));
-    //             db.flush();
-    //             zset_db.flush();
-    //         }
-    //     });
-    // }
+    let mut write_options = WriteOptions::default();
+    write_options.disable_wal(true);
+    {
+        let db = db.clone();
+        let zset_db = zset_db.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                db.flush();
+                zset_db.flush();
+            }
+        });
+    }
     let storage = Arc::new(Storage {
         #[cfg(not(feature = "memory"))]
         db,
