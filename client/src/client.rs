@@ -171,17 +171,6 @@ fn expect<T: PartialEq + Display>(msg: &str, actual: T, expected: T) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Test init
-    println!("Test /init");
-    {
-        let client = &*CLIENT;
-        let resp = client
-            .get(format!("{}/init", *HOST).parse().unwrap())
-            .await
-            .unwrap();
-        expect("init ok", resp.status(), StatusCode::OK);
-    }
-
     // Test add and query
     println!("Test /add and /query");
     add("hello".into(), "world".into()).await.unwrap();
