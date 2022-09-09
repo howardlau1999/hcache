@@ -526,7 +526,7 @@ fn init_load_kv(
     use rocksdb::WriteBatch;
 
     let mut options = rocksdb::ReadOptions::default();
-    options.set_readahead_size(128 * 1024 * 1024);
+    options.set_readahead_size(1024 * 1024 * 1024);
     options.set_verify_checksums(false);
     options.fill_cache(false);
     let mut iter = db.raw_iterator_opt(options);
@@ -623,6 +623,7 @@ fn main() {
                     options.set_allow_mmap_writes(true);
                     options.set_unordered_write(true);
                     options.set_use_adaptive_mutex(true);
+                    options.increase_parallelism(4);
                     #[cfg(feature = "memory")]
                     if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path) {
                         init_load_kv(
