@@ -310,58 +310,7 @@ async fn try_load_peers(storage: Arc<Storage>) {
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     try_load_peers(storage.clone()).await;
-    if let Ok(_) = storage.load_state.compare_exchange(
-        LOAD_STATE_INIT,
-        LOAD_STATE_LOADING,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
-    ) {
-        if let Ok(init_paths) = std::env::var("INIT_DIRS") {
-            let storage = storage.clone();
-            std::thread::spawn(move || {
-                println!("Start loading");
-                let mut threads = Vec::new();
-                for init_path in init_paths.split(",") {
-                    let init_path = String::from(init_path);
-                    let storage = storage.clone();
-                    threads.push(std::thread::spawn(move || {
-                        println!("Start loading from {}", init_path);
-                        let db_path = Path::new(init_path.as_str());
-                        let mut options = Options::default();
-                        options.create_if_missing(true);
-                        options.set_allow_mmap_reads(true);
-                        options.set_allow_mmap_writes(true);
-                        options.set_unordered_write(true);
-                        options.set_use_adaptive_mutex(true);
-                        #[cfg(feature = "memory")]
-                        if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path)
-                        {
-                            init_load_kv(
-                                db,
-                                storage.clone(),
-                                storage.count.load(std::sync::atomic::Ordering::SeqCst),
-                                storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
-                            );
-                        }
-                        println!("Finish loading from {}", init_path);
-                    }));
-                }
-
-                for t in threads {
-                    if let Ok(_) = t.join() {}
-                }
-                println!("Finish loading");
-                storage
-                    .load_state
-                    .store(LOAD_STATE_LOADED, Ordering::SeqCst);
-            });
-        }
-    }
-    if storage.load_state.load(Ordering::SeqCst) == LOAD_STATE_LOADED {
-        Ok(Response::new(Body::from("ok")))
-    } else {
-        Ok(Response::new(Body::from("loading")))
-    }
+    Ok(Response::new(Body::from("ok")))
 }
 
 #[cfg(not(feature = "monoio_parser"))]
@@ -585,9 +534,6 @@ fn init_load_kv(
     let mut count = 0;
     let tik = std::time::Instant::now();
     println!("Loading kv...");
-    let mut write_options = WriteOptions::default();
-    write_options.disable_wal(true);
-    let mut write_batch = WriteBatch::default();
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -597,13 +543,7 @@ fn init_load_kv(
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
                     storage.kv.insert(key.clone(), value.clone());
-                    write_batch.put(key, value);
                     count += 1;
-                }
-                if count % 1000000 == 0 {
-                    println!("Progress: {} keys", count);
-                    storage.db.write_opt(write_batch, &write_options).unwrap();
-                    write_batch = WriteBatch::default();
                 }
             }
         }
@@ -661,6 +601,47 @@ fn main() {
         zset_db,
         write_options,
     });
+    if let Ok(_) = storage.load_state.compare_exchange(
+        LOAD_STATE_INIT,
+        LOAD_STATE_LOADING,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        if let Ok(init_paths) = std::env::var("INIT_DIRS") {
+            let storage = storage.clone();
+            println!("Start loading");
+            let mut threads = Vec::new();
+            for init_path in init_paths.split(",") {
+                let init_path = String::from(init_path);
+                let storage = storage.clone();
+                threads.push(std::thread::spawn(move || {
+                    println!("Start loading from {}", init_path);
+                    let db_path = Path::new(init_path.as_str());
+                    let mut options = Options::default();
+                    options.create_if_missing(true);
+                    options.set_allow_mmap_reads(true);
+                    options.set_allow_mmap_writes(true);
+                    options.set_unordered_write(true);
+                    options.set_use_adaptive_mutex(true);
+                    #[cfg(feature = "memory")]
+                    if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path) {
+                        init_load_kv(
+                            db,
+                            storage.clone(),
+                            storage.count.load(std::sync::atomic::Ordering::SeqCst),
+                            storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
+                        );
+                    }
+                    println!("Finish loading from {}", init_path);
+                }));
+            }
+
+            for t in threads {
+                if let Ok(_) = t.join() {}
+            }
+            println!("Finish loading");
+        }
+    }
     storage.load_from_disk();
 
     #[cfg(feature = "tokio_uring")]
