@@ -602,7 +602,7 @@ fn init_load_kv(
                 }
                 if count % 100000 == 0 {
                     println!("Progress: {} keys", count);
-                    db.write_opt(write_batch, &write_options).unwrap();
+                    storage.db.write_opt(write_batch, &write_options).unwrap();
                     write_batch = WriteBatch::default();
                 }
             }
