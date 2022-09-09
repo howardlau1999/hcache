@@ -574,6 +574,8 @@ fn init_load_kv(
     peers: u64,
     me: usize,
 ) {
+    use rocksdb::WriteBatch;
+
     let mut options = rocksdb::ReadOptions::default();
     options.set_readahead_size(128 * 1024 * 1024);
     options.set_verify_checksums(false);
@@ -585,6 +587,7 @@ fn init_load_kv(
     println!("Loading kv...");
     let mut write_options = WriteOptions::default();
     write_options.disable_wal(true);
+    let mut write_batch = WriteBatch::default();
     while iter.valid() {
         let key = iter.key();
         let value = iter.value();
@@ -594,8 +597,13 @@ fn init_load_kv(
                 let value = String::from_utf8_unchecked(value.to_vec());
                 if get_shard(key.as_str(), peers) == me {
                     storage.kv.insert(key.clone(), value.clone());
-                    storage.db.put_opt(key, value, &write_options);
+                    write_batch.put(key, value);
                     count += 1;
+                }
+                if count % 100000 == 0 {
+                    println!("Progress: {} keys", count);
+                    db.write_opt(write_batch, &write_options).unwrap();
+                    write_batch = WriteBatch::default();
                 }
             }
         }
