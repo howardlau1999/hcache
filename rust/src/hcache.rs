@@ -301,6 +301,7 @@ async fn try_load_peers(storage: Arc<Storage>) {
                     storage
                         .update_peers(cluster_info.hosts, cluster_info.index)
                         .await;
+                    println!("Peers updated");
                 }
             }
         }

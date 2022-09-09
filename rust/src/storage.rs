@@ -58,9 +58,11 @@ impl PeerClientQueue {
                     if let Ok(transport) =
                         tarpc::serde_transport::tcp::connect(q.addr, Bincode::default).await
                     {
+                        println!("Connected client {} to {}", clients.len(), q.addr);
                         let client =
                             CachePeerClient::new(client::Config::default(), transport).spawn();
                         clients.push(Arc::new(client));
+                        
                         break;
                     } else {
                         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
