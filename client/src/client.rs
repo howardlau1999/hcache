@@ -1,10 +1,10 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use hyper::{client::HttpConnector, Body, Client, Method, Request, StatusCode};
 mod dto;
 use dto::{InsrtRequest, ScoreRange, ScoreValue};
 use lazy_static::lazy_static;
-use tokio::time::Instant;
+use tokio::{sync::Semaphore, time::Instant};
 
 lazy_static! {
     pub static ref HOST: String = {
@@ -102,7 +102,16 @@ async fn list(keys: Vec<String>) -> Result<Vec<InsrtRequest>, ()> {
                         .to_vec(),
                 )
             };
-            Ok(serde_json::from_str(&value).unwrap())
+            let res = serde_json::from_str(&value);
+            match res {
+                Ok(res) => Ok(res),
+                Err(e) => {
+                    println!("{}", value);
+                    eprintln!("error: {}", e);
+                    Err(())
+                },
+            }
+            
         }
         _ => Err(()),
     }
@@ -314,8 +323,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
     let tik = Instant::now();
     let mut handles = vec![];
+    let sem = Arc::new(Semaphore::new(200));
     for kv in kvs {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             add(kv.key, kv.value).await.unwrap();
         }));
     }
@@ -330,7 +342,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for i in 0..n {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             query(format!("key{}", i).repeat(16)).await.unwrap();
         }));
     }
@@ -345,7 +359,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for i in 0..n {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             del(format!("key{}", i).repeat(16)).await.unwrap();
         }));
     }
@@ -366,7 +382,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for chunk in kvs.chunks(1000) {
-        handles.push(tokio::spawn(batch(chunk.to_vec())));
+        let sem = sem.clone();
+        let chunk = chunk.to_vec();
+        handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
+            batch(chunk).await
+        }));
     }
     for handle in handles {
         handle.await.unwrap().unwrap();
@@ -396,7 +417,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for (i, score_value) in score_values.into_iter().enumerate() {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             zadd(
                 format!("zset{}", i).repeat(16).into(),
                 score_value.score,
@@ -417,7 +440,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for i in 0..n {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             zrange(format!("zset{}", i).repeat(16).into(), i as u32, i as u32)
                 .await
                 .unwrap();
@@ -434,7 +459,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tik = Instant::now();
     let mut handles = vec![];
     for i in 0..n {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             zrmv(format!("zset{}", i).repeat(16), format!("{}", i).repeat(32))
                 .await
                 .unwrap();
@@ -451,7 +478,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("cleanup...");
     let mut handles = vec![];
     for i in 0..n {
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
+            let perm = sem.acquire().await.unwrap();
             del(format!("key{}", i).repeat(16)).await.unwrap();
             del(format!("zset{}", i).repeat(16)).await.unwrap();
         }));
