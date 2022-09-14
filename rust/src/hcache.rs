@@ -355,10 +355,8 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                             })),
                             Err(_) => None,
                         }
-                    })
-                    .map(|h| h.join().unwrap())
-                    .collect();
-
+                    }).collect::<Vec<_>>();
+                let ssts = ssts.into_iter().map(|handle| handle.join().unwrap()).collect();
                 println!("{:?}", ssts);
                 let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
                 ingest_opt.set_snapshot_consistency(false);
