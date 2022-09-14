@@ -28,7 +28,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use rocksdb::WriteBatch;
 
 use rocksdb::{
-    DBWithThreadMode, FlushOptions, MultiThreaded, Options, SingleThreaded, WriteOptions,
+    DBWithThreadMode, FlushOptions, MultiThreaded, Options, SingleThreaded, WriteOptions, IteratorMode,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -574,11 +574,13 @@ fn main() {
             let init_paths = init_paths.split(',');
             let ssts = init_paths
                 .filter_map(|init_path| {
+                    let init_path = init_path.to_string().clone();
+                    let options = options.clone();
                     match DBWithThreadMode::<MultiThreaded>::open(&options, init_path) {
                         Ok(db) => Some(std::thread::spawn(move || {
                             let mut iter = db.iterator(IteratorMode::Start);
-                            let sst_writer = rocksdb::SstFileWriter::create(&options);
-                            let sst_path = Path::new(init_path).join("bulkload.sst");
+                            let mut sst_writer = rocksdb::SstFileWriter::create(&options);
+                            let sst_path = Path::new(init_path.as_str()).join("bulkload.sst").to_path_buf();
                             sst_writer.open(sst_path).unwrap();
                             while let Some((key, value)) = iter.next() {
                                 sst_writer.put(key, value).unwrap();
