@@ -342,7 +342,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                     .to_path_buf();
                                 sst_writer.open(&sst_path).unwrap();
                                 while let Some((key, value)) = iter.next() {
-                                    sst_writer.put(key, value).unwrap();
+                                    sst_writer.put(&key, &value).unwrap();
                                     unsafe {
                                         storage.kv.insert(
                                             String::from_utf8_unchecked(key.to_vec()),
