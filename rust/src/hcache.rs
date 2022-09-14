@@ -347,7 +347,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                 options.set_readahead_size(128 * 1024 * 1024);
                                 options.set_verify_checksums(false);
                                 options.fill_cache(false);
-                                let mut iter = db.raw_iterator_opt(&options);
+                                let mut iter = db.raw_iterator_opt(options);
                                 iter.seek_to_first();
                                 while iter.valid() {
                                     if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
