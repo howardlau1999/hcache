@@ -356,14 +356,21 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                 ingest_opt.set_snapshot_consistency(false);
                 ingest_opt.set_move_files(true);
                 ingest_opt.set_allow_global_seqno(true);
-                storage.db.ingest_external_file_opts(&ingest_opt, ssts);
+                println!(
+                    "{:?}",
+                    storage.db.ingest_external_file_opts(&ingest_opt, ssts)
+                );
             }
             storage
                 .load_state
                 .store(LOAD_STATE_LOADED, Ordering::SeqCst);
         });
     }
-    Ok(Response::new(Body::from("ok")))
+    if storage.load_state.load(Ordering::SeqCst) == LOAD_STATE_LOADED {
+        Ok(Response::new(Body::from("ok")))
+    } else {
+        Ok(Response::new(Body::from("loading")))
+    }
 }
 
 #[cfg(not(feature = "monoio_parser"))]
