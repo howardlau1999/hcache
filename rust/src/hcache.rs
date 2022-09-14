@@ -551,7 +551,7 @@ fn main() {
         let db = db.clone();
         let zset_db = zset_db.clone();
         std::thread::spawn(move || loop {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(100));
             db.flush();
             zset_db.flush();
         });
