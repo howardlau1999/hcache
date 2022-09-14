@@ -590,11 +590,12 @@ fn main() {
                     },
                     Err(_) => vec![]
                 }
-            }).flatten();
+            }).flatten().collect();
+            println!("{:?}", ssts);
             let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
             ingest_opt.set_snapshot_consistency(false);
             ingest_opt.set_move_files(true);
-            storage.db.ingest_external_file_opts(&ingest_opt, ssts.collect());
+            storage.db.ingest_external_file_opts(&ingest_opt, ssts);
         }
     }
     storage.load_from_disk();
