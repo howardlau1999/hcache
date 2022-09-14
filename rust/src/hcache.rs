@@ -28,7 +28,8 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use rocksdb::WriteBatch;
 
 use rocksdb::{
-    DBWithThreadMode, FlushOptions, MultiThreaded, Options, SingleThreaded, WriteOptions, IteratorMode,
+    DBWithThreadMode, FlushOptions, IteratorMode, MultiThreaded, Options, SingleThreaded,
+    WriteOptions,
 };
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -310,6 +311,51 @@ async fn try_load_peers(storage: Arc<Storage>) {
 
 async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Error> {
     try_load_peers(storage.clone()).await;
+    if let Ok(_) = storage.load_state.compare_exchange(
+        LOAD_STATE_INIT,
+        LOAD_STATE_LOADING,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        std::thread::spawn(|| {
+            if let Ok(init_paths) = std::env::var("INIT_DIRS") {
+                let init_paths = init_paths.split(',');
+                let ssts = init_paths
+                    .filter_map(|init_path| {
+                        let init_path = init_path.to_string().clone();
+                        let options = options.clone();
+                        match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
+                            Ok(db) => Some(std::thread::spawn(move || {
+                                let mut iter = db.iterator(IteratorMode::Start);
+                                let mut sst_writer = rocksdb::SstFileWriter::create(&options);
+                                let sst_path = Path::new(init_path.as_str())
+                                    .join("bulkload.sst")
+                                    .to_path_buf();
+                                sst_writer.open(&sst_path).unwrap();
+                                while let Some((key, value)) = iter.next() {
+                                    sst_writer.put(key, value).unwrap();
+                                }
+                                sst_writer.finish().unwrap();
+                                sst_path
+                            })),
+                            Err(_) => None,
+                        }
+                    })
+                    .map(|h| h.join().unwrap())
+                    .collect();
+
+                println!("{:?}", ssts);
+                let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
+                ingest_opt.set_snapshot_consistency(false);
+                ingest_opt.set_move_files(true);
+                ingest_opt.set_allow_global_seqno(true);
+                storage.db.ingest_external_file_opts(&ingest_opt, ssts);
+            }
+            storage
+                .load_state
+                .store(LOAD_STATE_LOADED, Ordering::SeqCst);
+        });
+    }
     Ok(Response::new(Body::from("ok")))
 }
 
@@ -564,44 +610,7 @@ fn main() {
         zset_db,
         write_options,
     });
-    if let Ok(_) = storage.load_state.compare_exchange(
-        LOAD_STATE_INIT,
-        LOAD_STATE_LOADING,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
-    ) {
-        if let Ok(init_paths) = std::env::var("INIT_DIRS") {
-            let init_paths = init_paths.split(',');
-            let ssts = init_paths
-                .filter_map(|init_path| {
-                    let init_path = init_path.to_string().clone();
-                    let options = options.clone();
-                    match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
-                        Ok(db) => Some(std::thread::spawn(move || {
-                            let mut iter = db.iterator(IteratorMode::Start);
-                            let mut sst_writer = rocksdb::SstFileWriter::create(&options);
-                            let sst_path = Path::new(init_path.as_str()).join("bulkload.sst").to_path_buf();
-                            sst_writer.open(&sst_path).unwrap();
-                            while let Some((key, value)) = iter.next() {
-                                sst_writer.put(key, value).unwrap();
-                            }
-                            sst_writer.finish().unwrap();
-                            sst_path
-                        })),
-                        Err(_) => None,
-                    }
-                })
-                .map(|h| h.join().unwrap())
-                .collect();
 
-            println!("{:?}", ssts);
-            let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
-            ingest_opt.set_snapshot_consistency(false);
-            ingest_opt.set_move_files(true);
-            ingest_opt.set_allow_global_seqno(true);
-            storage.db.ingest_external_file_opts(&ingest_opt, ssts);
-        }
-    }
     storage.load_from_disk();
 
     #[cfg(feature = "tokio_uring")]
