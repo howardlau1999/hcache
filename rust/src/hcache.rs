@@ -318,7 +318,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         Ordering::SeqCst,
         Ordering::SeqCst,
     ) {
-        let all_cores = storage.all_cores.read().await.clone().into_iter().cycle();
+        let mut all_cores = storage.all_cores.read().await.clone().into_iter().cycle();
         let storage = storage.clone();
         std::thread::spawn(move || {
             let mut options = Options::default();
@@ -421,13 +421,13 @@ async fn hyper_handler(
 
 #[cfg(feature = "tokio_local")]
 fn tokio_local_run(storage: Arc<Storage>) {
-    use core_affinity::{get_core_ids, set_for_current};
+    use core_affinity::get_core_ids;
     use hyper::{server::conn::Http, service::service_fn};
     use std::net::SocketAddr;
     let core_ids = get_core_ids().unwrap();
     {
         let mut all_cores = storage.all_cores.blocking_write();
-        all_cores = core_ids;
+        *all_cores = core_ids.clone();
     }
     let mut worker_threads = vec![];
     
