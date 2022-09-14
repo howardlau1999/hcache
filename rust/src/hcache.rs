@@ -332,6 +332,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                     .filter_map(|init_path| {
                         let init_path = init_path.to_string().clone();
                         let options = options.clone();
+                        let storage = storage.clone();
                         match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
                             Ok(db) => Some(std::thread::spawn(move || {
                                 let mut iter = db.iterator(IteratorMode::Start);
@@ -342,6 +343,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                 sst_writer.open(&sst_path).unwrap();
                                 while let Some((key, value)) = iter.next() {
                                     sst_writer.put(key, value).unwrap();
+                                    storage.kv.insert(key, value);
                                 }
                                 sst_writer.finish().unwrap();
                                 sst_path
