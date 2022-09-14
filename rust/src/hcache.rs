@@ -317,7 +317,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         Ordering::SeqCst,
         Ordering::SeqCst,
     ) {
-        std::thread::spawn(|| {
+        std::thread::spawn(move || {
             let mut options = Options::default();
             options.create_if_missing(true);
             options.increase_parallelism(4);
