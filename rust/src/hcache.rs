@@ -581,7 +581,7 @@ fn main() {
                             let mut iter = db.iterator(IteratorMode::Start);
                             let mut sst_writer = rocksdb::SstFileWriter::create(&options);
                             let sst_path = Path::new(init_path.as_str()).join("bulkload.sst").to_path_buf();
-                            sst_writer.open(sst_path).unwrap();
+                            sst_writer.open(&sst_path).unwrap();
                             while let Some((key, value)) = iter.next() {
                                 sst_writer.put(key, value).unwrap();
                             }
