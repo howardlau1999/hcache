@@ -1,6 +1,7 @@
 mod cluster;
 mod dto;
 mod storage;
+use core_affinity::set_for_current;
 use storage::{
     get_shard, ClusterInfo, Storage, LOAD_STATE_INIT, LOAD_STATE_LOADED, LOAD_STATE_LOADING,
 };
@@ -317,6 +318,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         Ordering::SeqCst,
         Ordering::SeqCst,
     ) {
+        let all_cores = storage.all_cores.read().await.clone().into_iter().cycle();
         let storage = storage.clone();
         std::thread::spawn(move || {
             let mut options = Options::default();
@@ -330,6 +332,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                 let init_paths = init_paths.split(',');
                 let ssts = init_paths
                     .filter_map(|init_path| {
+                        set_for_current(all_cores.next().unwrap());
                         let init_path = init_path.to_string().clone();
                         let options = options.clone();
                         let storage = storage.clone();
@@ -422,7 +425,12 @@ fn tokio_local_run(storage: Arc<Storage>) {
     use hyper::{server::conn::Http, service::service_fn};
     use std::net::SocketAddr;
     let core_ids = get_core_ids().unwrap();
+    {
+        let mut all_cores = storage.all_cores.blocking_write();
+        all_cores = core_ids;
+    }
     let mut worker_threads = vec![];
+    
     for core_id in core_ids {
         let storage = storage.clone();
         let worker = std::thread::spawn(move || {
@@ -626,6 +634,7 @@ fn main() {
         count: Default::default(),
         peer_updated: Default::default(),
         load_state: Default::default(),
+        all_cores: Default::default(),
         db,
         zset_db,
         write_options,

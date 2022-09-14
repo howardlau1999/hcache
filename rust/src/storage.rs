@@ -1,5 +1,6 @@
 use crate::cluster::CachePeerClient;
 use crate::dto::{InsrtRequest, ScoreRange, ScoreValue};
+use core_affinity::CoreId;
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::{pin, LockFreeCuckooHash};
 use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, WriteBatch, WriteOptions};
@@ -142,6 +143,7 @@ pub struct Storage {
     pub db: Arc<DBWithThreadMode<MultiThreaded>>,
     pub zset_db: Arc<DBWithThreadMode<MultiThreaded>>,
     pub write_options: WriteOptions,
+    pub all_cores: RwLock<Vec<CoreId>>,
 }
 
 #[cfg(not(feature = "memory"))]
