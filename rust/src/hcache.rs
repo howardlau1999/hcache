@@ -318,6 +318,13 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         Ordering::SeqCst,
     ) {
         std::thread::spawn(|| {
+            let mut options = Options::default();
+            options.create_if_missing(true);
+            options.increase_parallelism(4);
+            options.set_allow_mmap_reads(true);
+            options.set_allow_mmap_writes(true);
+            options.set_unordered_write(true);
+            options.set_use_adaptive_mutex(true);
             if let Ok(init_paths) = std::env::var("INIT_DIRS") {
                 let init_paths = init_paths.split(',');
                 let ssts = init_paths
