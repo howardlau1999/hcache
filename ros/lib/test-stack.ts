@@ -5,7 +5,6 @@ import { readFileSync } from 'fs';
 import { hostname } from 'os';
 
 export const dnfInstallPackages = `#!/bin/bash
-  dnf update -y
   dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build  libzstd-devel ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
     git ccache curl make gcc cmake clang-devel htop nfs-utils tmux openssl-devel perf hwloc-devel\
     numactl-devel  libpciaccess-devel    cryptopp-devel    libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel\
@@ -29,7 +28,7 @@ export const aptInstallPackages = `#!/bin/bash
       while true; do
         apt-get install -y pkg-config ccache python3-pyelftools meson libpcap-dev ninja-build distcc libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
           build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux cmake libssl-dev libssl3 \
-          libxml2-dev libyaml-cpp-dev libc-ares-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu=70.1-2 >> ~/apt.log
+          libxml2-dev libyaml-cpp-dev libc-ares-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu70=70.1-2 >> ~/apt.log
         if [ $? -eq 0 ]; then
           break
         fi
@@ -142,7 +141,9 @@ const imageAndStartScript = {
   "ubuntu": {
     startScript: `#!/bin/bash
       export DEBIAN_FRONTEND=noninteractive
-      apt-get update && apt-get install -y curl git  nfs-common
+      apt-get update && apt-get install -y curl git  nfs-common  pkg-config ccache python3-pyelftools meson libpcap-dev ninja-build distcc libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
+          build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux cmake libssl-dev libssl3 \
+          libxml2-dev libyaml-cpp-dev libc-ares-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu=70.1-2
       ${adjustLimits}
       ${adjustSysctl}
       ${uninstallAegis}
@@ -194,7 +195,7 @@ export class TestStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 指定使用的镜像和启动脚本
-    const fromWhich = process.env.IMAGE_FROM || "fedora";
+    const fromWhich = process.env.IMAGE_FROM || "ubuntu";
     const spec = (imageAndStartScript as any)[fromWhich];
     const specImageId = spec.imageId;
     const specStartScript = spec.startScript;

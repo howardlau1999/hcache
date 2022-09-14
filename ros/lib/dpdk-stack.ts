@@ -12,7 +12,7 @@ export class DPDKStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 随机选择一个可用区部署
-    const zoneId = ros.Fn.select(0, ros.Fn.getAzs(ros.RosPseudo.region));
+    const zoneId = 'cn-guangzhou-a';
 
     // 创建虚拟网络
     // 构建 VPC
@@ -47,7 +47,7 @@ export class DPDKStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c7.xlarge",
+      defaultValue: "ecs.c6.xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -84,13 +84,13 @@ export class DPDKStack extends ros.Stack {
     // 等待逻辑，用于等待 ECS 中应用安装完成
     const serverCount = 2;
     const ecsWaitConditionHandle = new ROS.WaitConditionHandle(this, 'RosWaitConditionHandle', {
-      count: serverCount
+      count: 1
     });
 
     const ecsWaitCondition = new ROS.WaitCondition(this, 'RosWaitCondition', {
       timeout: 600,
       handle: ros.Fn.ref('RosWaitConditionHandle'),
-      count: serverCount
+      count: 1
     });
 
     const servers: ecs.Instance[] = [];
@@ -103,7 +103,7 @@ export class DPDKStack extends ros.Stack {
         vSwitchId: controlSwitch.attrVSwitchId,
         imageId: "fedora_35_x64_20G_alibase_20220531.vhd",
         securityGroupId: sg.attrSecurityGroupId,
-        instanceType: i === 0 ? 'ecs.c7.4xlarge' : ecsInstanceType,
+        instanceType: i === 0 ? 'ecs.c6.4xlarge' : ecsInstanceType,
         instanceName: `hcache-dpdk-${i}`,
         systemDiskCategory: ecsSystemDiskCategory,
         password: ecsPassword,
@@ -118,7 +118,7 @@ export class DPDKStack extends ros.Stack {
           SSH_PUBLIC_KEY: pubKey,
         }, `#!/bin/bash
         ${dnfInstallPackages}
-        dnf install -y git gcc openssl-devel kernel-devel-$(uname -r) bc numactl-devel mkdir make net-tools vim pciutils iproute pcre-devel zlib-devel elfutils-libelf-devel meson
+        dnf install -y git gcc openssl-devel kernel-devel-$(uname -r) bc numactl-devel  make net-tools vim pciutils iproute pcre-devel zlib-devel elfutils-libelf-devel meson
         ${disableSpectre}
         mkdir -p ~/.ssh
         cat <<EOF > ~/do-start.sh
@@ -181,41 +181,41 @@ EOF
       instanceIds: servers.map((server) => server.attrInstanceId),
     });
 
-    const dpdkDownloadConditionHandle = new ROS.WaitConditionHandle(this, 'DPDKDownloadHandle', {
-      count: 1
-    });
-    const dpdkDownloadWaitCondition = new ROS.WaitCondition(this, 'DPDKDownloadWaitCondition', {
-      timeout: 600,
-      handle: ros.Fn.ref('DPDKDownloadHandle'),
-      count: 1
-    });
-    const dpdkDownloadCommand = new ecs.RunCommand(this, 'hcache-control-dpdk-download', {
-      commandContent: ros.Fn.replace({
-        OTHER_SERVERS: ros.Fn.join(' ', servers.slice(1).map((server) => `${server.attrPrivateIp}`)),
-        NOTIFY: dpdkDownloadConditionHandle.attrCurlCli
-      }, `
-      curl -o /root/dpdk-22.03.tar.xz -L https://howardlaume-bj.oss-cn-beijing-internal.aliyuncs.com/dpdk-22.03.tar.xz
-      for server in OTHER_SERVERS; do
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /root/dpdk-22.03.tar.xz \${server}:/root/dpdk-22.03.tar.xz &
-      done
-      wait
-      NOTIFY
-      `),
-      type: 'RunShellScript',
-      instanceIds: [servers[0].attrInstanceId],
-    });
-    dpdkDownloadCommand.addDependency(ecsWaitCondition);
+//     const dpdkDownloadConditionHandle = new ROS.WaitConditionHandle(this, 'DPDKDownloadHandle', {
+//       count: 1
+//     });
+//     const dpdkDownloadWaitCondition = new ROS.WaitCondition(this, 'DPDKDownloadWaitCondition', {
+//       timeout: 600,
+//       handle: ros.Fn.ref('DPDKDownloadHandle'),
+//       count: 1
+//     });
+//     const dpdkDownloadCommand = new ecs.RunCommand(this, 'hcache-control-dpdk-download', {
+//       commandContent: ros.Fn.replace({
+//         OTHER_SERVERS: ros.Fn.join(' ', servers.slice(1).map((server) => `${server.attrPrivateIp}`)),
+//         NOTIFY: dpdkDownloadConditionHandle.attrCurlCli
+//       }, `
+//       curl -o /root/dpdk-22.03.tar.xz -L https://howardlaume-bj.oss-cn-beijing-internal.aliyuncs.com/dpdk-22.03.tar.xz
+//       for server in OTHER_SERVERS; do
+//         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /root/dpdk-22.03.tar.xz \${server}:/root/dpdk-22.03.tar.xz &
+//       done
+//       wait
+//       NOTIFY
+//       `),
+//       type: 'RunShellScript',
+//       instanceIds: [servers[0].attrInstanceId],
+//     });
+//     dpdkDownloadCommand.addDependency(ecsWaitCondition);
 
-    const dpdkSetupCommand = new ecs.RunCommand(this, 'hcache-dpdk-setup', {
-      commandContent: `
-      tar -C /root -xJf /root/dpdk-22.03.tar.xz
-      bash -c "cd /root/dpdk-22.03 && meson -Denable_kmods=true -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
-      ${installRust}
-      `,
-      type: 'RunShellScript',
-      instanceIds: servers.map((server) => server.attrInstanceId),
-    });
-    dpdkSetupCommand.addDependency(dpdkDownloadWaitCondition);
+//     const dpdkSetupCommand = new ecs.RunCommand(this, 'hcache-dpdk-setup', {
+//       commandContent: `
+//       tar -C /root -xJf /root/dpdk-22.03.tar.xz
+//       bash -c "cd /root/dpdk-22.03 && meson -Denable_kmods=true -Dmbuf_refcnt_atomic=false build && ninja -C build && ninja -C build install && ldconfig" > ~/dpdk.log
+//       ${installRust}
+//       `,
+//       type: 'RunShellScript',
+//       instanceIds: servers.map((server) => server.attrInstanceId),
+//     });
+//     dpdkSetupCommand.addDependency(dpdkDownloadWaitCondition);
 
     const dpdkHostsCommand = new ecs.RunCommand(this, 'hcache-dpdk-hosts', {
       commandContent: ros.Fn.replace({ SERVERS: ros.Fn.join('\n', nics.map((nic, i) => `${nic.attrPrivateIpAddress} dpdk-${i}`)) }, `
@@ -227,22 +227,22 @@ EOF
       type: 'RunShellScript',
       instanceIds: servers.map((server) => server.attrInstanceId),
     });
-    servers.forEach((server, i) => {
-      const distccCommand = new ecs.RunCommand(this, `hcache-distcc-setup-${i}`, {
-        commandContent: `
-        cat <<EOF > /etc/default/distcc
-STARTDISTCC="true"
-ALLOWEDNETS="${controlSwitch.attrCidrBlock}"
-LISTENER="${server.attrPrivateIp}"
-EOF
-        systemctl enable distcc
-        systemctl restart distcc
-        `,
-        type: 'RunShellScript',
-        instanceIds: [server.attrInstanceId],
-      });
-      distccCommand.addDependency(ecsWaitCondition);
-    });
+//     servers.forEach((server, i) => {
+//       const distccCommand = new ecs.RunCommand(this, `hcache-distcc-setup-${i}`, {
+//         commandContent: `
+//         cat <<EOF > /etc/default/distcc
+// STARTDISTCC="true"
+// ALLOWEDNETS="${controlSwitch.attrCidrBlock}"
+// LISTENER="${server.attrPrivateIp}"
+// EOF
+//         systemctl enable distcc
+//         systemctl restart distcc
+//         `,
+//         type: 'RunShellScript',
+//         instanceIds: [server.attrInstanceId],
+//       });
+//       distccCommand.addDependency(ecsWaitCondition);
+//     });
     dpdkHostsCommand.addDependency(ecsWaitCondition);
     hostsCommand.addDependency(ecsWaitCondition);
 

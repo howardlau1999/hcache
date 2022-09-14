@@ -518,39 +518,12 @@ fn monoio_run(storage: Arc<Storage>) {
 
 #[cfg(feature = "memory")]
 fn init_load_kv(
-    db: DBWithThreadMode<SingleThreaded>,
+    dir: &str,
     storage: Arc<Storage>,
     peers: u64,
     me: usize,
 ) {
-    use rocksdb::WriteBatch;
-
-    let mut options = rocksdb::ReadOptions::default();
-    options.set_readahead_size(1024 * 1024 * 1024);
-    options.set_verify_checksums(false);
-    options.fill_cache(false);
-    let mut iter = db.raw_iterator_opt(options);
-    iter.seek_to_first();
-    let mut count = 0;
-    let tik = std::time::Instant::now();
-    println!("Loading kv...");
-    while iter.valid() {
-        let key = iter.key();
-        let value = iter.value();
-        if let (Some(key), Some(value)) = (key, value) {
-            unsafe {
-                let key = String::from_utf8_unchecked(key.to_vec());
-                let value = String::from_utf8_unchecked(value.to_vec());
-                if get_shard(key.as_str(), peers) == me {
-                    storage.kv.insert(key.clone(), value.clone());
-                    count += 1;
-                }
-            }
-        }
-        iter.next();
-    }
-    let duration = tik.elapsed();
-    println!("Loaded {} kvs in {:?}", count, duration);
+    
 }
 
 fn main() {
@@ -608,39 +581,30 @@ fn main() {
         Ordering::SeqCst,
     ) {
         if let Ok(init_paths) = std::env::var("INIT_DIRS") {
-            let storage = storage.clone();
-            println!("Start loading");
-            let mut threads = Vec::new();
-            for init_path in init_paths.split(",") {
-                let init_path = String::from(init_path);
-                let storage = storage.clone();
-                threads.push(std::thread::spawn(move || {
-                    println!("Start loading from {}", init_path);
-                    let db_path = Path::new(init_path.as_str());
-                    let mut options = Options::default();
-                    options.create_if_missing(true);
-                    options.set_allow_mmap_reads(true);
-                    options.set_allow_mmap_writes(true);
-                    options.set_unordered_write(true);
-                    options.set_use_adaptive_mutex(true);
-                    options.increase_parallelism(4);
-                    #[cfg(feature = "memory")]
-                    if let Ok(db) = DBWithThreadMode::<SingleThreaded>::open(&options, db_path) {
-                        init_load_kv(
-                            db,
-                            storage.clone(),
-                            storage.count.load(std::sync::atomic::Ordering::SeqCst),
-                            storage.me.load(std::sync::atomic::Ordering::SeqCst) as usize,
-                        );
-                    }
-                    println!("Finish loading from {}", init_path);
-                }));
-            }
-
-            for t in threads {
-                if let Ok(_) = t.join() {}
-            }
-            println!("Finish loading");
+            let init_paths = init_paths.split(',');
+            let ssts = init_paths.map(|init_path| {
+                match std::fs::read_dir(init_path) {
+                    Ok(dir_iter) => {
+                        dir_iter.filter_map(|entry| match entry {
+                            Ok(entry) => {
+                                let path = entry.path();
+                                if let Some(ext) = path.extension() {
+                                    if ext == "sst" {
+                                        return Some(Path::new(init_path).join(path));
+                                    }
+                                }
+                                None
+                            }
+                            Err(_) => None,
+                        }).collect()
+                    },
+                    Err(_) => vec![]
+                }
+            }).flatten();
+            let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
+            ingest_opt.set_snapshot_consistency(false);
+            ingest_opt.set_move_files(true);
+            storage.db.ingest_external_file_opts(&ingest_opt, ssts.collect());
         }
     }
     storage.load_from_disk();
