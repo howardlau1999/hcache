@@ -317,6 +317,7 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
         Ordering::SeqCst,
         Ordering::SeqCst,
     ) {
+        let storage = storage.clone();
         std::thread::spawn(move || {
             let mut options = Options::default();
             options.create_if_missing(true);
