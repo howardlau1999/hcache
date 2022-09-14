@@ -338,28 +338,40 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         let storage = storage.clone();
                         match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
                             Ok(db) => Some(std::thread::spawn(move || {
-                                let mut iter = db.iterator(IteratorMode::Start);
                                 let mut sst_writer = rocksdb::SstFileWriter::create(&options);
                                 let sst_path = Path::new(init_path.as_str())
                                     .join("bulkload.sst")
                                     .to_path_buf();
                                 sst_writer.open(&sst_path).unwrap();
-                                while let Some((key, value)) = iter.next() {
-                                    sst_writer.put(&key, &value).unwrap();
-                                    unsafe {
-                                        storage.kv.insert(
-                                            String::from_utf8_unchecked(key.to_vec()),
-                                            String::from_utf8_unchecked(value.to_vec()),
-                                        );
+                                let mut options = rocksdb::ReadOptions::default();
+                                options.set_readahead_size(128 * 1024 * 1024);
+                                options.set_verify_checksums(false);
+                                options.fill_cache(false);
+                                let mut iter = db.raw_iterator_opt(&options);
+                                iter.seek_to_first();
+                                while iter.valid() {
+                                    if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
+                                        sst_writer.put(key, value).unwrap();
+                                        unsafe {
+                                            storage.kv.insert(
+                                                String::from_utf8_unchecked(key.to_vec()),
+                                                String::from_utf8_unchecked(value.to_vec()),
+                                            );
+                                        }
                                     }
+                                    iter.next();
                                 }
                                 sst_writer.finish().unwrap();
                                 sst_path
                             })),
                             Err(_) => None,
                         }
-                    }).collect::<Vec<_>>();
-                let ssts = ssts.into_iter().map(|handle| handle.join().unwrap()).collect();
+                    })
+                    .collect::<Vec<_>>();
+                let ssts = ssts
+                    .into_iter()
+                    .map(|handle| handle.join().unwrap())
+                    .collect();
                 println!("{:?}", ssts);
                 let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
                 ingest_opt.set_snapshot_consistency(false);
@@ -430,7 +442,7 @@ fn tokio_local_run(storage: Arc<Storage>) {
         *all_cores = core_ids.clone();
     }
     let mut worker_threads = vec![];
-    
+
     for core_id in core_ids {
         let storage = storage.clone();
         let worker = std::thread::spawn(move || {
