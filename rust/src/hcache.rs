@@ -576,7 +576,7 @@ fn main() {
                 .filter_map(|init_path| {
                     let init_path = init_path.to_string().clone();
                     let options = options.clone();
-                    match DBWithThreadMode::<MultiThreaded>::open(&options, init_path) {
+                    match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
                         Ok(db) => Some(std::thread::spawn(move || {
                             let mut iter = db.iterator(IteratorMode::Start);
                             let mut sst_writer = rocksdb::SstFileWriter::create(&options);
