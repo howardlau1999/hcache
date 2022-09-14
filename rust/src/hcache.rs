@@ -516,16 +516,6 @@ fn monoio_run(storage: Arc<Storage>) {
     }
 }
 
-#[cfg(feature = "memory")]
-fn init_load_kv(
-    dir: &str,
-    storage: Arc<Storage>,
-    peers: u64,
-    me: usize,
-) {
-    
-}
-
 fn main() {
     #[cfg(feature = "memory")]
     let kv = LockFreeCuckooHash::new();
