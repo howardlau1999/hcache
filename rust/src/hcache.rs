@@ -572,29 +572,31 @@ fn main() {
     ) {
         if let Ok(init_paths) = std::env::var("INIT_DIRS") {
             let init_paths = init_paths.split(',');
-            let ssts = init_paths.map(|init_path| {
-                match std::fs::read_dir(init_path) {
-                    Ok(dir_iter) => {
-                        dir_iter.filter_map(|entry| match entry {
-                            Ok(entry) => {
-                                let path = entry.path();
-                                if let Some(ext) = path.extension() {
-                                    if ext == "sst" {
-                                        return Some(Path::new(init_path).join(path));
-                                    }
-                                }
-                                None
+            let ssts = init_paths
+                .filter_map(|init_path| {
+                    match DBWithThreadMode::<MultiThreaded>::open(&options, init_path) {
+                        Ok(db) => Some(std::thread::spawn(move || {
+                            let mut iter = db.iterator(IteratorMode::Start);
+                            let sst_writer = rocksdb::SstFileWriter::create(&options);
+                            let sst_path = Path::new(init_path).join("bulkload.sst");
+                            sst_writer.open(sst_path).unwrap();
+                            while let Some((key, value)) = iter.next() {
+                                sst_writer.put(key, value).unwrap();
                             }
-                            Err(_) => None,
-                        }).collect()
-                    },
-                    Err(_) => vec![]
-                }
-            }).flatten().collect();
+                            sst_writer.finish().unwrap();
+                            sst_path
+                        })),
+                        Err(_) => None,
+                    }
+                })
+                .map(|h| h.join().unwrap())
+                .collect();
+
             println!("{:?}", ssts);
             let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
             ingest_opt.set_snapshot_consistency(false);
             ingest_opt.set_move_files(true);
+            ingest_opt.set_allow_global_seqno(true);
             storage.db.ingest_external_file_opts(&ingest_opt, ssts);
         }
     }
