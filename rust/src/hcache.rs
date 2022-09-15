@@ -9,7 +9,6 @@ use storage::{
 #[cfg(feature = "memory")]
 use lockfree_cuckoohash::LockFreeCuckooHash;
 
-#[cfg(feature = "glommio")]
 mod glommio_hyper;
 #[cfg(feature = "monoio")]
 mod monoio_hyper;
@@ -441,50 +440,51 @@ fn tokio_local_run(storage: Arc<Storage>) {
         let mut all_cores = storage.all_cores.blocking_write();
         *all_cores = core_ids.clone();
     }
-    let mut worker_threads = vec![];
+    // let mut worker_threads = vec![];
 
-    for core_id in core_ids {
-        let storage = storage.clone();
-        let worker = std::thread::spawn(move || {
-            println!("Starting worker {}", core_id.id);
-            set_for_current(core_id);
-            let local_rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            local_rt.block_on(async move {
-                let local = tokio::task::LocalSet::new();
-                local
-                    .run_until(async move {
-                        let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
-                        let socket = tokio::net::TcpSocket::new_v4().unwrap();
-                        socket.set_reuseport(true).unwrap();
-                        socket.bind(addr).unwrap();
-                        let listener = socket.listen(1024).unwrap();
-                        while let Ok((conn, _addr)) = listener.accept().await {
-                            let storage = storage.clone();
-                            let http_conn = Http::new().serve_connection(
-                                conn,
-                                service_fn(move |req| hyper_handler(req, storage.clone())),
-                            );
-                            tokio::task::spawn_local(async move {
-                                match http_conn.await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        if !e.is_incomplete_message() {
-                                            eprintln!("Error: {}", e);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    })
-                    .await;
-            })
-        });
+    // for core_id in core_ids {
+    //     let storage = storage.clone();
+    //     let worker = std::thread::spawn(move || {
+    //         println!("Starting worker {}", core_id.id);
+    //         set_for_current(core_id);
+    //         let local_rt = tokio::runtime::Builder::new_current_thread()
+    //             .enable_all()
+    //             .build()
+    //             .unwrap();
+    //         local_rt.block_on(async move {
+    //             let local = tokio::task::LocalSet::new();
+    //             local
+    //                 .run_until(async move {
+    //                     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    //                     let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    //                     socket.set_reuseport(true).unwrap();
+    //                     socket.bind(addr).unwrap();
+    //                     let listener = socket.listen(1024).unwrap();
+    //                     while let Ok((conn, _addr)) = listener.accept().await {
+    //                         let storage = storage.clone();
+    //                         let http_conn = Http::new().serve_connection(
+    //                             conn,
+    //                             service_fn(move |req| hyper_handler(req, storage.clone())),
+    //                         );
+    //                         tokio::task::spawn_local(async move {
+    //                             match http_conn.await {
+    //                                 Ok(_) => {}
+    //                                 Err(e) => {
+    //                                     if !e.is_incomplete_message() {
+    //                                         eprintln!("Error: {}", e);
+    //                                     }
+    //                                 }
+    //                             }
+    //                         });
+    //                     }
+    //                 })
+    //                 .await;
+    //         })
+    //     });
 
-        worker_threads.push(worker);
-    }
+    //     worker_threads.push(worker);
+    // }
+    let storage_rpc = storage.clone();
     let rpc_worker = std::thread::spawn(move || {
         println!("Starting RPC worker");
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -492,15 +492,26 @@ fn tokio_local_run(storage: Arc<Storage>) {
             .build()
             .unwrap();
         rt.block_on(async move {
-            let f = tokio::spawn(cluster::cluster_server(storage.clone()));
-            try_load_peers(storage).await;
+            let f = tokio::spawn(cluster::cluster_server(storage_rpc.clone()));
+            try_load_peers(storage_rpc).await;
             f.await.unwrap();
         })
     });
-    worker_threads.push(rpc_worker);
-    for worker in worker_threads {
-        worker.join().unwrap();
-    }
+    use glommio::{CpuSet, LocalExecutorPoolBuilder, PoolPlacement};
+    LocalExecutorPoolBuilder::new(PoolPlacement::MaxSpread(
+        num_cpus::get(),
+        CpuSet::online().ok(),
+    ))
+    .on_all_shards(|| async move {
+        let id = glommio::executor().id();
+        println!("Starting executor {}", id);
+        glommio_hyper::serve_http(([0, 0, 0, 0], 8080), hyper_handler, 8192, storage)
+            .await
+            .unwrap();
+    })
+    .unwrap()
+    .join_all();
+    rpc_worker.join().unwrap();
 }
 
 #[cfg(feature = "tokio_uring")]

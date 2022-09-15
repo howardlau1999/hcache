@@ -323,7 +323,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
     let tik = Instant::now();
     let mut handles = vec![];
-    let sem = Arc::new(Semaphore::new(400));
+    let sem = Arc::new(Semaphore::new(500));
     for kv in kvs {
         let sem = sem.clone();
         handles.push(tokio::spawn(async move {

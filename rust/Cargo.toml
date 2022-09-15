@@ -17,22 +17,22 @@ rocksdb = { git = "https://github.com/rust-rocksdb/rust-rocksdb" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-glommio = { version = "0.7", optional = true }
-futures-lite = { version = "1.12.0", optional = true }
-num_cpus = { version = "1.13.1", optional = true }
+glommio = { version = "0.7" }
+futures-lite = { version = "1.12.0" }
+num_cpus = { version = "1.13.1" }
 lockfree-cuckoohash = { git = "https://github.com/datenlord/lockfree-cuckoohash", optional = true }
 core_affinity = { version = "0.5.10", optional = true }
-tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring", optional = true }
+tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring" }
 
 [features]
 default = ["tokio_local", "memory"]
-glommio = ["dep:glommio", "dep:num_cpus", "dep:futures-lite"]
+glommio = []
 monoio = ["dep:monoio", "dep:monoio-compat", "dep:core_affinity"]
-monoio_parser = ["dep:monoio", "dep:num_cpus"]
+monoio_parser = ["dep:monoio"]
 tokio = []
 memory = ["dep:lockfree-cuckoohash"]
 tokio_local = ["dep:core_affinity"]
-tokio_uring = ["dep:tokio-uring"]
+tokio_uring = []
 
 [[bin]]
 name = "hcache"
