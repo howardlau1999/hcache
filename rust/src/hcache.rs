@@ -350,12 +350,19 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                 iter.seek_to_first();
                                 while iter.valid() {
                                     if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
-                                        sst_writer.put(key, value).unwrap();
-                                        unsafe {
-                                            storage.kv.insert(
-                                                String::from_utf8_unchecked(key.to_vec()),
-                                                String::from_utf8_unchecked(value.to_vec()),
-                                            );
+                                        if get_shard(
+                                            key,
+                                            storage.count.load(std::sync::atomic::Ordering::SeqCst),
+                                        ) as u32
+                                            == storage.me.load(std::sync::atomic::Ordering::SeqCst)
+                                        {
+                                            sst_writer.put(key, value).unwrap();
+                                            unsafe {
+                                                storage.kv.insert(
+                                                    String::from_utf8_unchecked(key.to_vec()),
+                                                    String::from_utf8_unchecked(value.to_vec()),
+                                                );
+                                            }
                                         }
                                     }
                                     iter.next();
