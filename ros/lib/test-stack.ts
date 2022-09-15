@@ -154,6 +154,7 @@ const imageAndStartScript = {
 #!/bin/bash
 export INIT_DIRS=/init_data/data1,/init_data/data2,/init_data/data3
 while true; do
+  ulimit -l unlimited
   /usr/bin/hcache --reserve-memory 512M
 done
 EOF
@@ -165,6 +166,7 @@ modprobe -rv ip_tables
 # ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
 # export TXQUEUES=(\\$(ls -1qdv /sys/class/net/eth0/queues/tx-*))
 # for i in \\\${!TXQUEUES[@]}; do printf '%x' $((2**i)) > \\\${TXQUEUES[i]}/xps_cpus; done;
+ulimit -l unlimited
 cd ~ && nohup ~/auto-restart.sh 2>&1 &
 EOF
 
