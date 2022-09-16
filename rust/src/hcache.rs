@@ -337,11 +337,6 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                         let storage = storage.clone();
                         match DBWithThreadMode::<MultiThreaded>::open(&options, &init_path) {
                             Ok(db) => Some(std::thread::spawn(move || {
-                                let mut sst_writer = rocksdb::SstFileWriter::create(&options);
-                                let sst_path = Path::new(init_path.as_str())
-                                    .join("bulkload.sst")
-                                    .to_path_buf();
-                                sst_writer.open(&sst_path).unwrap();
                                 let mut options = rocksdb::ReadOptions::default();
                                 options.set_readahead_size(128 * 1024 * 1024);
                                 options.set_verify_checksums(false);
@@ -350,10 +345,12 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                 iter.seek_to_first();
                                 let count = storage.count.load(std::sync::atomic::Ordering::SeqCst);
                                 let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
+                                let mut write_options = WriteOptions::default();
+                                write_options.disable_wal(true);
                                 while iter.valid() {
                                     if let (Some(key), Some(value)) = (iter.key(), iter.value()) {
                                         if get_shard(key, count) as u32 == me {
-                                            sst_writer.put(key, value).unwrap();
+                                            storage.db.put_opt(key, value, &write_options);
                                             unsafe {
                                                 storage.kv.insert(
                                                     String::from_utf8_unchecked(key.to_vec()),
@@ -364,26 +361,14 @@ async fn handle_init(storage: Arc<Storage>) -> Result<Response<Body>, hyper::Err
                                     }
                                     iter.next();
                                 }
-                                sst_writer.finish().unwrap();
-                                sst_path
                             })),
                             Err(_) => None,
                         }
                     })
                     .collect::<Vec<_>>();
-                let ssts = ssts
-                    .into_iter()
-                    .map(|handle| handle.join().unwrap())
-                    .collect();
-                println!("{:?}", ssts);
-                let mut ingest_opt = rocksdb::IngestExternalFileOptions::default();
-                ingest_opt.set_snapshot_consistency(false);
-                ingest_opt.set_move_files(true);
-                ingest_opt.set_allow_global_seqno(true);
-                println!(
-                    "{:?}",
-                    storage.db.ingest_external_file_opts(&ingest_opt, ssts)
-                );
+                for sst in ssts {
+                    sst.join().unwrap();
+                }
             }
             storage
                 .load_state

@@ -65,7 +65,8 @@ EOF
 export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
 vm.dirty_ratio=80
-net.core.busy_poll=1
+net.core.busy_read=50
+net.core.busy_poll=50
 # net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080,58080
