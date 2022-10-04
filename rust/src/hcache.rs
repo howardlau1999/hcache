@@ -529,6 +529,12 @@ fn tokio_run(storage: Arc<Storage>) {
         .enable_all()
         .build()
         .unwrap();
+    let storage_rpc = storage.clone();
+    rt.spawn(async move {
+        let f = tokio::spawn(cluster::cluster_server(storage_rpc.clone()));
+        try_load_peers(storage_rpc).await;
+        f.await.unwrap();
+    });
     rt.block_on(async {
         let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
         let make_svc = make_service_fn(|_| {

@@ -5,11 +5,11 @@ import { readFileSync } from 'fs';
 import { hostname } from 'os';
 
 export const dnfInstallPackages = `#!/bin/bash
-  dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build  libzstd-devel ragel    boost-devel    fmt-devel    libubsan    libasan    libatomic\
-    git ccache curl make gcc cmake clang-devel htop nfs-utils tmux openssl-devel perf hwloc-devel\
+  dnf -y install gcc-c++ snappy-devel glog-devel jsoncpp-devel  ninja-build  libzstd-devel ragel  libubsan    libasan    libatomic\
+    git ccache curl make gcc binutils-gold binutils-devel cmake htop nfs-utils tmux openssl-devel perf hwloc-devel\
     numactl-devel  libpciaccess-devel    cryptopp-devel    libxml2-devel    xfsprogs-devel    gnutls-devel    lksctp-tools-devel    lz4-devel\
     meson    python3    python3-pyelftools   systemtap-sdt-devel   libtool    yaml-cpp-devel    c-ares-devel    stow\
-    diffutils    openssl    boost-devel   libtool-ltdl-devel trousers-devel libidn2-devel libunistring-devel > ~/dnf.log
+    diffutils    openssl    boost-devel   libtool-ltdl-devel trousers-devel libidn2-devel libunistring-devel xxhash-devel > ~/dnf.log
 ` 
 
 const yumInstallPackages = `#!/bin/bash
@@ -65,8 +65,8 @@ EOF
 export const adjustSysctl = `
 cat <<EOF | sudo tee -a /etc/sysctl.conf
 vm.dirty_ratio=80
-net.core.busy_read=50
-net.core.busy_poll=50
+# net.core.busy_read=50
+# net.core.busy_poll=50
 # net.ipv4.tcp_congestion_control=reno
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.ip_local_reserved_ports = 8080,58080
@@ -91,7 +91,7 @@ export const uninstallAegis = `
 `
 
 export const disableSpectre = `
-sed -i 's/^GRUB_CMDLINE_LINUX="/&nospectre_v1 nospectre_v2 pti=off mds=off tsx_async_abort=off /'  /etc/default/grub
+sed -i 's/^GRUB_CMDLINE_LINUX="/&mitigations=off intel_iommu=on /'  /etc/default/grub
 update-grub
 if [ $? -ne 0 ]; then
   grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -110,12 +110,14 @@ const startupScriptFromCleanImage = `
 #!/bin/bash
 export INIT_DIRS=/init_data/data1,/init_data/data2,/init_data/data3
 while true; do
+  ulimit -l unlimited
   /usr/bin/hcache --reserve-memory 512M
 done
 EOF
         # 启动脚本
         cat <<EOF > ~/start.sh
 #!/bin/bash
+ulimit -l unlimited
 modprobe -rv ip_tables
 # dhclient -x -pf /var/run/dhclient-eth0.pid
 # ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
@@ -143,8 +145,9 @@ const imageAndStartScript = {
     startScript: `#!/bin/bash
       export DEBIAN_FRONTEND=noninteractive
       apt-get update && apt-get install --allow-downgrades -y curl git  nfs-common  pkg-config ccache python3-pyelftools meson libpcap-dev ninja-build distcc libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
-          build-essential curl git libclang-dev xfslibs-dev htop nfs-common tmux cmake libssl-dev libssl3 \
+          build-essential curl git xfslibs-dev htop nfs-common tmux cmake libssl-dev libxxhash-dev libssl3 \
           libxml2-dev libyaml-cpp-dev libc-ares-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu70=70.1-2
+      # curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- 15 all
       ${adjustLimits}
       ${adjustSysctl}
       ${uninstallAegis}
@@ -162,6 +165,8 @@ EOF
         # 启动脚本
         cat <<EOF > ~/start.sh
 #!/bin/bash
+echo "-a never,task" > /etc/audit/rules.d/disable-syscall-auditing.rules
+/sbin/augenrules --load
 modprobe -rv ip_tables
 # dhclient -x -pf /var/run/dhclient-eth0.pid
 # ip addr change \\$( ip -4 addr show dev eth0 | grep 'inet' | awk '{ print \\$2 " brd " \\$4 " scope global"}') dev eth0 valid_lft forever preferred_lft forever
@@ -204,7 +209,7 @@ export class TestStack extends ros.Stack {
     const specStartScript = spec.startScript;
 
     // 随机选择一个可用区部署
-    const zoneId = 'cn-beijing-a';
+    const zoneId = 'cn-beijing-i';
 
     // 创建虚拟网络
     // 构建 VPC
@@ -235,7 +240,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsInstanceType = new ros.RosParameter(this, "ecs_instance_type", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "ecs.c6.4xlarge",
+      defaultValue: "ecs.c7.4xlarge",
       associationProperty: "ALIYUN::ECS::Instance::InstanceType",
       associationPropertyMetadata: {
         "ZoneId": zoneId,
@@ -243,7 +248,7 @@ export class TestStack extends ros.Stack {
     });
     const ecsSystemDiskCategory = new ros.RosParameter(this, "ecs_system_disk_category", {
       type: ros.RosParameterType.STRING,
-      defaultValue: "cloud_efficiency",
+      defaultValue: "cloud_essd",
     });
 
     // 创建安全组开放端口

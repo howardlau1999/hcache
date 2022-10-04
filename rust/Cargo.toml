@@ -25,11 +25,11 @@ core_affinity = { version = "0.5.10", optional = true }
 tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring" }
 
 [features]
-default = ["tokio_local", "memory"]
+default = ["tokio", "memory"]
 glommio = []
 monoio = ["dep:monoio", "dep:monoio-compat", "dep:core_affinity"]
 monoio_parser = ["dep:monoio"]
-tokio = []
+tokio = ["dep:core_affinity"]
 memory = ["dep:lockfree-cuckoohash"]
 tokio_local = ["dep:core_affinity"]
 tokio_uring = []

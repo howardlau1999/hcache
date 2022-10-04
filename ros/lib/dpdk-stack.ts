@@ -12,7 +12,7 @@ export class DPDKStack extends ros.Stack {
     // The code that defines your stack goes here
 
     // 随机选择一个可用区部署
-    const zoneId = 'cn-guangzhou-a';
+    const zoneId = 'cn-beijing-i';
 
     // 创建虚拟网络
     // 构建 VPC
@@ -128,11 +128,12 @@ export INIT_DIR=/data
 mkdir -p /dev/hugepages
 mountpoint -q /dev/hugepages || mount -t hugetlbfs nodev /dev/hugepages
 echo 512 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+modprobe vfio
+modprobe vfio-pci
+echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 ip link set \\\$IFACE down
 if [ \\\$? == 0 ]; then
-  modprobe uio
-  modprobe uio_pci_generic
-  ~/dpdk-22.03/usertools/dpdk-devbind.py --bind uio_pci_generic \\\$IFACE
+  ~/dpdk-22.03/usertools/dpdk-devbind.py --bind vfio-pci \\\$IFACE
 fi
 hcache --reserve-memory 512M --dpdk-pmd --network-stack native --task-quota-ms 10
 EOF
