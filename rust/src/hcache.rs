@@ -219,7 +219,7 @@ async fn handle_batch(
         let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
         let storage = storage.clone();
         if shard != me {
-            futures.push(tokio::task::spawn_local(async move {
+            futures.push(tokio::task::spawn(async move {
                 storage.batch_insert_kv_remote(kvs, shard as usize).await
             }));
         }
@@ -252,7 +252,7 @@ async fn handle_list(
         let me = storage.me.load(std::sync::atomic::Ordering::SeqCst);
         let storage = storage.clone();
         if shard != me {
-            futures.push(tokio::task::spawn_local(async move {
+            futures.push(tokio::task::spawn(async move {
                 storage
                     .list_keys_remote(keys.into_iter().collect(), shard as usize)
                     .await
@@ -525,6 +525,12 @@ fn tokio_run(storage: Arc<Storage>) {
         Server,
     };
     use std::net::SocketAddr;
+    use core_affinity::get_core_ids;
+    let core_ids = get_core_ids().unwrap();
+    {
+        let mut all_cores = storage.all_cores.blocking_write();
+        *all_cores = core_ids.clone();
+    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

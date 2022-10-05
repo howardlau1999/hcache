@@ -146,7 +146,7 @@ const imageAndStartScript = {
       export DEBIAN_FRONTEND=noninteractive
       apt-get update && apt-get install --allow-downgrades -y curl git  nfs-common  pkg-config ccache python3-pyelftools meson libpcap-dev ninja-build distcc libjsoncpp-dev libboost-all-dev libzstd-dev libdouble-conversion-dev systemtap-sdt-dev libgoogle-glog-dev \
           build-essential curl git xfslibs-dev htop nfs-common tmux cmake libssl-dev libxxhash-dev libssl3 \
-          libxml2-dev libyaml-cpp-dev libc-ares-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu70=70.1-2
+          libxml2-dev libyaml-cpp-dev libc-ares-dev libclang-dev libzstd-dev libsnappy-dev liblz4-dev libgnutls28-dev libhwloc-dev libnuma-dev libpciaccess-dev libcrypto++-dev libicu70=70.1-2
       # curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- 15 all
       ${adjustLimits}
       ${adjustSysctl}
